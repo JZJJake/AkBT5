@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A-Share Pro Trader</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- ECharts CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <aside id="sidebar">
+            <div class="sidebar-header">
+                <h2>股票池 (Stock Pool)</h2>
+                <div class="actions">
+                    <button id="update-list-btn">更新列表</button>
+                    <input type="text" id="search-input" placeholder="代码/拼音 (e.g., 000001)">
+                </div>
+            </div>
+            <ul id="stock-list">
+                <!-- Stock list will be populated here -->
+            </ul>
+        </aside>
+
+        <main id="main-content">
+            <header class="chart-header">
+                <h1 id="current-stock-title">请选择股票</h1>
+                <div class="controls">
+                    <button id="download-data-btn">下载数据并显示</button>
+                    <div class="period-selectors">
+                        <button class="active">日线</button>
+                        <button disabled title="尚未实现">周线</button>
+                        <button disabled title="尚未实现">月线</button>
+                    </div>
+                </div>
+            </header>
+
+            <div id="chart-container">
+                <!-- ECharts will render here -->
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,137 @@
+:root {
+    --bg-color: #0d1117;
+    --panel-bg: #161b22;
+    --text-primary: #ffd700; /* Gold */
+    --text-secondary: #c9d1d9;
+    --border-color: #30363d;
+    --up-color: #f6465d; /* Red for up in China */
+    --down-color: #0ecb81; /* Green for down in China */
+    --highlight: #21262d;
+    --btn-bg: #21262d;
+    --btn-hover: #30363d;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: "Microsoft YaHei", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    height: 100vh;
+    overflow: hidden;
+}
+
+#app {
+    display: flex;
+    height: 100%;
+}
+
+/* Sidebar */
+#sidebar {
+    width: 300px;
+    background-color: var(--panel-bg);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-header {
+    padding: 15px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-header h2 {
+    font-size: 1.2rem;
+    margin-bottom: 10px;
+    color: var(--text-primary);
+}
+
+.actions {
+    display: flex;
+    gap: 10px;
+}
+
+input[type="text"] {
+    flex: 1;
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 8px;
+    border-radius: 4px;
+}
+
+button {
+    background-color: var(--btn-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    padding: 8px 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+button:hover {
+    background-color: var(--btn-hover);
+}
+
+#stock-list {
+    flex: 1;
+    overflow-y: auto;
+    list-style: none;
+}
+
+#stock-list li {
+    padding: 10px 15px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    color: var(--text-secondary);
+    display: flex;
+    justify-content: space-between;
+}
+
+#stock-list li:hover, #stock-list li.active {
+    background-color: var(--highlight);
+    color: var(--text-primary);
+}
+
+/* Main Content */
+#main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.chart-header {
+    padding: 15px 20px;
+    background-color: var(--panel-bg);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.chart-header h1 {
+    font-size: 1.5rem;
+}
+
+.controls {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+}
+
+.period-selectors button.active {
+    background-color: var(--text-primary);
+    color: var(--bg-color);
+}
+
+#chart-container {
+    flex: 1;
+    width: 100%;
+    padding: 10px;
+    background-color: var(--bg-color);
+}
