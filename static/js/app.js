@@ -4,11 +4,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const chartContainer = document.getElementById('chart-container');
     const currentStockTitle = document.getElementById('current-stock-title');
     const updateListBtn = document.getElementById('update-list-btn');
-    const downloadDataBtn = document.getElementById('download-data-btn');
+    const periodButtons = document.querySelectorAll('.period-selectors button');
 
     let chartInstance = null;
     let allStocks = [];
     let currentStock = null;
+    let currentPeriod = 'daily';
 
     // Initialize ECharts
     function initChart() {
@@ -34,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 allStocks = data.stocks;
                 renderStockList(allStocks);
             } else {
-                stockListEl.innerHTML = '<li>未找到股票数据，请点击“更新列表”</li>';
+                stockListEl.innerHTML = '<li>未找到股票数据，请点击“一键同步历史数据”</li>';
             }
         } catch (error) {
             console.error('Error fetching stock list:', error);
@@ -85,15 +86,30 @@ document.addEventListener('DOMContentLoaded', () => {
         chartInstance.showLoading({text: '加载中...', color: '#ffd700', textColor: '#ffd700', maskColor: 'rgba(0, 0, 0, 0.8)'});
 
         try {
-            const response = await fetch(`/api/kline/${symbol}`);
-            const result = await response.json();
+            let response = await fetch(`/api/kline/${symbol}?period=${currentPeriod}`);
+            let result = await response.json();
 
             if (result.data && result.data.length > 0) {
                 renderChart(result.data);
             } else {
-                chartInstance.hideLoading();
-                chartInstance.clear();
-                alert('本地无数据，请点击“下载数据并显示”');
+                // Auto download if data is missing
+                chartInstance.showLoading({text: '本地无数据，自动下载中...', color: '#ffd700', textColor: '#ffd700', maskColor: 'rgba(0, 0, 0, 0.8)'});
+
+                await fetch(`/api/download?symbol=${symbol}`, { method: 'POST' });
+
+                // Poll until data is available (simple wait for demo)
+                setTimeout(async () => {
+                    response = await fetch(`/api/kline/${symbol}?period=${currentPeriod}`);
+                    result = await response.json();
+
+                    if (result.data && result.data.length > 0) {
+                        renderChart(result.data);
+                    } else {
+                        chartInstance.hideLoading();
+                        chartInstance.clear();
+                        alert('下载数据失败或该股票无历史数据。');
+                    }
+                }, 5000);
             }
         } catch (error) {
             console.error('Error loading K-line data:', error);
@@ -204,27 +220,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Triggers
     updateListBtn.addEventListener('click', async () => {
+        if (!confirm('这将从网络下载所有A股的数据。此操作可能需要数小时并在后台运行。是否继续？')) {
+            return;
+        }
         updateListBtn.disabled = true;
-        updateListBtn.textContent = '更新中...';
+        updateListBtn.textContent = '同步中...';
         await fetch('/api/download', { method: 'POST' });
-        alert('后台更新任务已启动。稍后刷新页面查看。');
+        alert('后台全量更新任务已启动。您可以继续浏览已有数据或稍后刷新页面查看新数据。由于数据量庞大，完成需要一定时间。');
         updateListBtn.disabled = false;
-        updateListBtn.textContent = '更新列表';
+        updateListBtn.textContent = '一键同步历史数据';
     });
 
-    downloadDataBtn.addEventListener('click', async () => {
-        if (!currentStock) return alert('请先选择股票');
-        downloadDataBtn.disabled = true;
-        downloadDataBtn.textContent = '下载中...';
+    // Handle period switching
+    periodButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            periodButtons.forEach(b => b.classList.remove('active'));
+            e.target.classList.add('active');
 
-        await fetch(`/api/download?symbol=${currentStock.symbol}`, { method: 'POST' });
-
-        // Polling to wait for data (simplified, just waits 5 seconds and reloads)
-        setTimeout(() => {
-            loadKLineData(currentStock.symbol);
-            downloadDataBtn.disabled = false;
-            downloadDataBtn.textContent = '下载数据并显示';
-        }, 8000);
+            currentPeriod = e.target.getAttribute('data-period');
+            if (currentStock) {
+                loadKLineData(currentStock.symbol);
+            }
+        });
     });
 
     // Startup
