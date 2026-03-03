@@ -5,6 +5,7 @@ import os
 import ta
 import time
 import random
+import yfinance as yf
 
 DB_PATH = "stock_data.db"
 
@@ -97,75 +98,66 @@ def download_stock_list():
     except Exception as e:
         print(f"Error downloading stock list: {e}")
 
-def download_kline_data(symbol, start_date="19900101", end_date="20500101", retries=3):
+def _get_yf_ticker(symbol: str) -> str:
+    """Map A-share symbol (000001) to yfinance format (000001.SZ)"""
+    # Beijing exchange starts with 4, 8, 9, SH starts with 6, SZ with 0, 3
+    if symbol.startswith('6'):
+        return f"{symbol}.SS"
+    elif symbol.startswith(('0', '3')):
+        return f"{symbol}.SZ"
+    else:
+        return f"{symbol}.BJ"  # Some might not be supported well
+
+def download_kline_data(symbol, start_date="2010-01-01", end_date=None, retries=3):
+    yf_ticker = _get_yf_ticker(symbol)
+
     for attempt in range(retries):
         try:
-            # Fetch daily K-line using Sina API which is more stable than Eastmoney API
-            sina_symbol = f"sh{symbol}" if symbol.startswith(('6', '9')) else f"sz{symbol}"
-            df = ak.stock_zh_a_daily(symbol=sina_symbol, start_date=start_date, end_date=end_date, adjust="qfq")
+            # Batch downloading is handled in sync_all_data. This is for single fetch.
+            df = yf.download(yf_ticker, start=start_date, end=end_date, progress=False, multi_level_index=False)
             if df.empty:
                 return
 
-            df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
+            # Reset index to get Date column
+            df.reset_index(inplace=True)
+
+            # yfinance returns columns like: Date, Open, High, Low, Close, Adj Close, Volume
+            df = df[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']].copy()
+            df.columns = ['date', 'open', 'high', 'low', 'close', 'volume']
             df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
 
             # Calculate indicators
             df = calculate_indicators(df)
-
             df['symbol'] = symbol
 
             conn = get_connection()
-            # Using to_sql with if_exists='append' might cause UNIQUE constraint failed if we don't handle it.
-            # Let's delete existing data for this symbol first for simplicity, or use 'replace' if we do it per symbol (but it's one big table).
             cursor = conn.cursor()
             cursor.execute("DELETE FROM kline_daily WHERE symbol = ?", (symbol,))
             conn.commit()
-
             df.to_sql('kline_daily', conn, if_exists='append', index=False)
             conn.close()
             print(f"Successfully downloaded K-line data for {symbol}.")
-            return # Success, break out of retry loop
+            return
         except Exception as e:
             if attempt < retries - 1:
-                sleep_time = random.uniform(2.0, 5.0)
-                print(f"Retry {attempt + 1}/{retries} downloading k-line data for {symbol} due to: {e}. Sleeping {sleep_time:.2f}s...")
-                time.sleep(sleep_time)
+                time.sleep(random.uniform(1.0, 2.0))
             else:
-                print(f"Error downloading k-line data for {symbol} after {retries} attempts: {e}")
+                print(f"Error downloading k-line data for {symbol}: {e}")
 
 def download_fundamental_data(symbol, retries=3):
-    """
-    Downloads fundamental data required by user.
-    Uses 'stock_a_indicator_lg' or 'stock_financial_abstract' for more reliable data.
-    """
+    yf_ticker = _get_yf_ticker(symbol)
     for attempt in range(retries):
         try:
-            # Using stock_a_indicator_lg (Legu API) for circulating market cap
-            indicator_df = ak.stock_a_indicator_lg(symbol=symbol)
+            ticker = yf.Ticker(yf_ticker)
+            info = ticker.info
 
-            circulating_market_cap = 0.0
-            if not indicator_df.empty:
-                # Get the most recent value
-                latest = indicator_df.iloc[-1]
-                # '总市值' / '流通市值' or similar.
-                # Legu returns total_mv (总市值) and pe, etc. Let's try to get what we can.
-                if 'total_mv' in latest:
-                    circulating_market_cap = float(latest['total_mv'])
-
-            # Try to get financial abstract for cash flow and liability
-            # This is complex to parse per stock, providing a simplified version
-            # where we attempt fetching and handle failures gracefully
-            asset_liability_ratio = 0.0
-            operating_cash_flow = 0.0
-
-            try:
-                # Sina finance API for abstract
-                finance_df = ak.stock_financial_abstract(symbol=symbol)
-                if not finance_df.empty:
-                    # Very rough heuristic to grab data from the dataframe if available
-                    pass
-            except Exception:
-                pass # Accept missing advanced financials if API fails
+            circulating_market_cap = info.get('marketCap', 0.0)
+            operating_cash_flow = info.get('operatingCashflow', 0.0)
+            # Yfinance doesn't easily expose asset-liability without fetching full financials.
+            # We will use Total Debt / Total Assets if available.
+            total_debt = info.get('totalDebt', 0.0)
+            total_assets = info.get('totalAssets', 1.0) # Avoid div by zero
+            asset_liability_ratio = (total_debt / total_assets) if total_assets else 0.0
 
             conn = get_connection()
             cursor = conn.cursor()
@@ -173,18 +165,12 @@ def download_fundamental_data(symbol, retries=3):
                            (symbol, circulating_market_cap, asset_liability_ratio, operating_cash_flow))
             conn.commit()
             conn.close()
-            print(f"Successfully downloaded fundamental data for {symbol}.")
             return
-
         except Exception as e:
             if attempt < retries - 1:
-                sleep_time = random.uniform(2.0, 5.0)
-                print(f"Retry {attempt + 1}/{retries} downloading fundamental data for {symbol} due to: {e}. Sleeping {sleep_time:.2f}s...")
-                time.sleep(sleep_time)
+                time.sleep(random.uniform(1.0, 2.0))
             else:
-                print(f"Error downloading fundamental data for {symbol} after {retries} attempts: {e}")
-
-                # Insert zero row if all fails to prevent UI breaking
+                # Insert empty
                 conn = get_connection()
                 cursor = conn.cursor()
                 cursor.execute("INSERT OR REPLACE INTO fundamental_data (symbol, circulating_market_cap, asset_liability_ratio, operating_cash_flow) VALUES (?, ?, ?, ?)",
@@ -194,10 +180,9 @@ def download_fundamental_data(symbol, retries=3):
 
 def sync_all_data():
     """
-    Downloads the entire stock list, then sequentially downloads K-line and fundamental
-    data for all A-share stocks. Warning: This is a very long-running process.
+    Downloads the entire stock list, then batches K-line download using yfinance for immense speedup.
     """
-    print("Starting full sync of all A-share data...")
+    print("Starting fast batch sync of all A-share data via yfinance...")
     download_stock_list()
 
     conn = get_connection()
@@ -207,18 +192,66 @@ def sync_all_data():
         print(f"Error reading stock list from DB: {e}")
         conn.close()
         return
+
+    # Pre-clean DB
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM kline_daily")
+    conn.commit()
     conn.close()
 
+    # Process in chunks of 50 to avoid memory explosion or yf limits
+    chunk_size = 50
     total = len(stocks)
-    for i, symbol in enumerate(stocks):
-        print(f"[{i+1}/{total}] Syncing {symbol}...")
-        download_kline_data(symbol)
-        download_fundamental_data(symbol)
 
-        # Polite delay to avoid hammering the Eastmoney servers
-        time.sleep(random.uniform(1.0, 3.0))
+    print(f"Downloading historical data for {total} stocks in batches...")
+    for i in range(0, total, chunk_size):
+        chunk = stocks[i:i+chunk_size]
+        yf_tickers = [_get_yf_ticker(sym) for sym in chunk]
 
-    print("Full sync complete.")
+        try:
+            # Multi-threaded download
+            df_batch = yf.download(yf_tickers, start="2010-01-01", group_by='ticker', threads=True, progress=False)
+
+            conn = get_connection()
+            for j, symbol in enumerate(chunk):
+                yf_ticker = yf_tickers[j]
+
+                # yfinance returns single level columns if only 1 ticker was requested/succeeded
+                # otherwise multi-index. Handle both:
+                try:
+                    if len(chunk) == 1:
+                        df_stock = df_batch.copy()
+                    else:
+                        if yf_ticker not in df_batch:
+                            continue
+                        df_stock = df_batch[yf_ticker].copy()
+
+                    if df_stock.empty or df_stock['Close'].isna().all():
+                        continue
+
+                    df_stock.dropna(subset=['Close'], inplace=True)
+                    df_stock.reset_index(inplace=True)
+
+                    df_stock = df_stock[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']].copy()
+                    df_stock.columns = ['date', 'open', 'high', 'low', 'close', 'volume']
+                    df_stock['date'] = pd.to_datetime(df_stock['date']).dt.strftime('%Y-%m-%d')
+
+                    df_stock = calculate_indicators(df_stock)
+                    df_stock['symbol'] = symbol
+
+                    # Batch insert
+                    df_stock.to_sql('kline_daily', conn, if_exists='append', index=False)
+
+                except Exception as e:
+                    print(f"Error processing stock {symbol} from batch: {e}")
+
+            conn.close()
+            print(f"[{min(i+chunk_size, total)}/{total}] Batch processed.")
+
+        except Exception as e:
+            print(f"Error fetching batch {i}: {e}")
+
+    print("Full fast sync complete.")
 
 
 if __name__ == "__main__":
