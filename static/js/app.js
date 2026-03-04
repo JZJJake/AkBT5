@@ -5,7 +5,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const chartContainer = document.getElementById('chart-container');
     const currentStockTitle = document.getElementById('current-stock-title');
     const updateListBtn = document.getElementById('update-list-btn');
+    const screenerBtn = document.getElementById('screener-btn');
     const periodButtons = document.querySelectorAll('.period-selectors button');
+
 
     let chartInstance = null;
     let allStocks = [];
@@ -359,29 +361,32 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
 
-        // Find J line buy signals (upward turns)
+        // Find J line buy signals based on user TDX logic:
+        // KDJJ=(REF(e,2)<a OR e<a) AND REF(e,1)<30 AND e>REF(e,1) AND REF(e,1)<REF(e,2);
+        // e = J line (kdj_j), a = K line (kdj_k)
         const j_buy_signals = [];
         for (let i = 2; i < data.length; i++) {
-            let prev2 = data[i-2].kdj_j;
-            let prev1 = data[i-1].kdj_j;
-            let curr = data[i].kdj_j;
+            let j_curr = data[i].kdj_j;
+            let j_prev1 = data[i-1].kdj_j;
+            let j_prev2 = data[i-2].kdj_j;
+            let k_curr = data[i].kdj_k;
 
-            // J line forms a bottom (V-shape) AND the J value is starting to trend upward or ST triggers
-            if (prev1 < prev2 && curr > prev1) {
-                // To filter noise, you typically want this to happen at low levels or when ST condition (kinetic energy) starts
-                // Let's add a buy signal marker at the 'curr' index
-                if (data[i].kdj_st === 1 || curr < 30) {
-                    j_buy_signals.push({
-                        name: 'Buy',
-                        coord: [dates[i], curr],
-                        value: 'B',
-                        itemStyle: { color: 'red' },
-                        symbolSize: 15,
-                        symbolOffset: [0, 10],
-                        xAxis: dates[i],
-                        yAxis: curr
-                    });
-                }
+            let condition1 = (j_prev2 < k_curr) || (j_curr < k_curr);
+            let condition2 = j_prev1 < 30;
+            let condition3 = j_curr > j_prev1;
+            let condition4 = j_prev1 < j_prev2;
+
+            if (condition1 && condition2 && condition3 && condition4) {
+                j_buy_signals.push({
+                    name: 'Buy',
+                    coord: [dates[i], j_curr],
+                    value: 'B',
+                    itemStyle: { color: 'red' },
+                    symbolSize: 15,
+                    symbolOffset: [0, 10],
+                    xAxis: dates[i],
+                    yAxis: j_curr
+                });
             }
         }
 
@@ -526,7 +531,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     visualMap: [
                 {
                     show: false,
-                    dimension: 0,
+                    dimension: 2,
                     seriesIndex: 3, // Volume
                     pieces: [{ value: 1, color: upColor }, { value: -1, color: downColor }]
                 },
@@ -641,7 +646,40 @@ document.addEventListener('DOMContentLoaded', () => {
         chartInstance.hideLoading();
     }
 
+
+    // Screener logic
+    if (screenerBtn) {
+        screenerBtn.addEventListener('click', async () => {
+            screenerBtn.disabled = true;
+            screenerBtn.textContent = '选股中...';
+            allStocks = []; // Clear the pool
+            renderStockList(allStocks);
+            stockListEl.innerHTML = '<li style="color: gray; padding: 10px;">运行选股策略中...</li>';
+
+            try {
+                const res = await fetch('/api/screener');
+                const data = await res.json();
+                if (data.error) {
+                    alert('选股出错: ' + data.error);
+                    renderStockList(allStocks); // reset
+                } else {
+                    alert('选股完成! 找到符合条件的股票数量: ' + data.stocks.length);
+                    // Update sidebar with only matched stocks
+                    allStocks = data.stocks;
+                    renderStockList(allStocks);
+                }
+            } catch (err) {
+                console.error(err);
+                alert('选股请求失败');
+            } finally {
+                screenerBtn.disabled = false;
+                screenerBtn.textContent = '选股 (Screener)';
+            }
+        });
+    }
+
     // Triggers
+
     updateListBtn.addEventListener('click', async () => {
         if (!confirm('这将从网络下载所有A股的数据。此操作可能需要数小时并在后台运行。是否继续？')) {
             return;

@@ -27,6 +27,85 @@ def get_stocks():
     finally:
         conn.close()
 
+@app.get("/api/screener")
+def run_screener():
+    conn = get_connection()
+    try:
+        # Prevent memory bomb by only loading the last 15 days of data across all stocks.
+        # This is more than enough to get the latest 3 rows per stock for the REF(X, 1|2) logic.
+        max_date_df = pd.read_sql_query("SELECT MAX(date) FROM kline_daily", conn)
+        max_date_str = max_date_df.iloc[0, 0]
+
+        if not max_date_str:
+            return {"error": "No data in database", "stocks": []}
+
+        cutoff_date = (pd.to_datetime(max_date_str) - pd.Timedelta(days=15)).strftime('%Y-%m-%d')
+
+        df = pd.read_sql_query("SELECT symbol, date, open, close, volume, ma20, ma205, macdh, kdj_k, kdj_j FROM kline_daily WHERE date >= ?", conn, params=(cutoff_date,))
+
+        if df.empty:
+            return {"error": "No recent data", "stocks": []}
+
+        df = df.sort_values(by=['symbol', 'date']).reset_index(drop=True)
+
+        # Calculate shifted columns within groups
+        df['m20_1'] = df.groupby('symbol')['ma20'].shift(1)
+        df['macdh_1'] = df.groupby('symbol')['macdh'].shift(1)
+        df['dm205'] = df['ma20'] - df['ma205']
+        df['dm205_1'] = df.groupby('symbol')['dm205'].shift(1)
+
+        df['j_1'] = df.groupby('symbol')['kdj_j'].shift(1)
+        df['j_2'] = df.groupby('symbol')['kdj_j'].shift(2)
+
+        # We only want to evaluate the last row for each symbol
+        latest = df.groupby('symbol').tail(1).copy()
+
+        # Get mocked or real circulating_market_cap
+        fund_df = pd.read_sql_query("SELECT symbol, circulating_market_cap FROM fundamental_data", conn)
+        latest = latest.merge(fund_df, on='symbol', how='left')
+        latest['circulating_market_cap'] = latest['circulating_market_cap'].fillna(0)
+
+        # Apply filters
+        # 1. 市值<1000 (We use circulating_market_cap < 1000)
+        # 2. STRMID(CODE,1,2)<>"68" (Exclude STAR)
+        # 3. JYJE>0.1 (We approximate JYJE as close * volume * 100 / 1e8)
+        latest['jyje'] = latest['close'] * latest['volume'] / 1000000.0
+
+        cond_not_star = ~latest['symbol'].str.startswith('68')
+        cond_market_cap = latest['circulating_market_cap'] < 1000
+        cond_jyje = latest['jyje'] > 0.1
+
+        cond_a3 = (latest['close'] > latest['open']) & \
+                  (latest['ma20'] > latest['m20_1']) & \
+                  (latest['ma20'] > latest['ma205']) & \
+                  (latest['dm205'] > latest['dm205_1']) & \
+                  (latest['macdh'] > latest['macdh_1'])
+
+        cond_kdjj = ((latest['j_2'] < latest['kdj_k']) | (latest['kdj_j'] < latest['kdj_k'])) & \
+                    (latest['j_1'] < 30) & \
+                    (latest['kdj_j'] > latest['j_1']) & \
+                    (latest['j_1'] < latest['j_2'])
+
+        final_cond = cond_not_star & cond_market_cap & cond_jyje & cond_a3 & cond_kdjj
+
+        selected_symbols = latest[final_cond]['symbol'].tolist()
+
+        if not selected_symbols:
+            return {"error": None, "stocks": []}
+
+        placeholders = ','.join(['?'] * len(selected_symbols))
+        query_names = f"SELECT symbol, name FROM stock_list WHERE symbol IN ({placeholders})"
+        df_selected = pd.read_sql_query(query_names, conn, params=selected_symbols)
+
+        return {"error": None, "stocks": df_selected.to_dict(orient="records")}
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e), "stocks": []}
+    finally:
+        conn.close()
+
 @app.get("/api/kline/{symbol}")
 def get_kline(symbol: str, period: str = Query("daily")):
     conn = get_connection()
