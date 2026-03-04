@@ -78,15 +78,17 @@ def get_kline(symbol: str, period: str = Query("daily")):
         # This is strictly required for FastAPI builtin json encoder to avoid 'nan' errors.
         # However pandas `where(pd.notnull(df), None)` doesn't actually cast pandas floats containing NaNs
         # to Python `None` cleanly when the column is float type.
+        last_close = float(df['close'].iloc[-1]) if not df.empty else 0.0
+
         df_dict = df.to_dict(orient="records")
         for row in df_dict:
             for k, v in row.items():
                 if isinstance(v, float) and np.isnan(v):
                     row[k] = None
 
-        return {"symbol": symbol, "data": df_dict}
+        return {"symbol": symbol, "data": df_dict, "last_close": last_close}
     except Exception as e:
-        return {"error": str(e), "data": []}
+        return {"error": str(e), "data": [], "last_close": 0}
     finally:
         conn.close()
 

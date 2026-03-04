@@ -7,16 +7,14 @@
     <link rel="stylesheet" href="/static/css/style.css">
     <!-- ECharts CDN -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <script src="/static/js/pinyin-match.js"></script>
 </head>
 <body>
     <div id="app">
         <aside id="sidebar">
+            <!-- Red Zone -->
             <div class="sidebar-header">
                 <h2>股票池 (Stock Pool)</h2>
-                <div class="actions">
-                    <button id="update-list-btn" title="获取股票列表并下载全量数据">一键同步历史数据</button>
-                    <input type="text" id="search-input" placeholder="代码/拼音 (e.g., 000001)">
-                </div>
             </div>
             <ul id="stock-list">
                 <!-- Stock list will be populated here -->
@@ -25,8 +23,21 @@
 
         <main id="main-content">
             <header class="chart-header">
-                <h1 id="current-stock-title">请选择股票</h1>
-                <div class="controls">
+                <div class="header-left">
+                    <h1 id="current-stock-title">请选择股票</h1>
+                </div>
+                <div class="header-center">
+                    <!-- Blue Zone -->
+                    <div class="search-container">
+                        <div class="search-wrapper">
+                            <input type="text" id="search-input" placeholder="代码/拼音 (e.g., 000001)" autocomplete="off">
+                            <ul id="search-suggestions" class="suggestions-list hidden"></ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="header-right controls">
+                    <!-- Green Zone -->
+                    <button id="update-list-btn" title="获取股票列表并下载全量数据" class="sync-btn" style="margin-right: 15px;">一键同步历史数据</button>
                     <div class="period-selectors">
                         <button class="active" data-period="daily">日线</button>
                         <button data-period="weekly">周线</button>
@@ -36,7 +47,7 @@
             </header>
 
             <div id="chart-container">
-                <!-- ECharts will render here -->
+                <!-- Purple Zone -->
             </div>
         </main>
     </div>

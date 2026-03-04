@@ -5,8 +5,6 @@ import os
 import ta
 import time
 import random
-import pandas as pd
-import akshare as ak
 from pytdx.hq import TdxHq_API
 
 DB_PATH = "stock_data.db"
@@ -42,6 +40,16 @@ def init_db():
             kdj_k REAL,
             kdj_d REAL,
             kdj_j REAL,
+            change_pct REAL,
+            upper_shadow_pct REAL,
+            is_limit_up BOOLEAN,
+            ma20 REAL,
+            ma205 REAL,
+            ztfb3 BOOLEAN,
+            ztfb_maxh REAL,
+            ztfb_maxl REAL,
+            kdj_st INTEGER,
+            kdj_tj REAL,
             PRIMARY KEY (symbol, date)
         )
     ''')
@@ -69,20 +77,48 @@ def calculate_indicators(df):
     df['macds'] = macd.macd_signal()
     df['macdh'] = macd.macd_diff()
 
-    # Calculate KDJ (9, 3, 3)
-    stoch = ta.momentum.StochasticOscillator(high=df['high'], low=df['low'], close=df['close'], window=9, smooth_window=3)
-    df['kdj_k'] = stoch.stoch()
-    # ta.momentum.StochasticOscillator doesn't have d and j directly in a way we want often, let's manually calculate K, D, J using standard formulas if needed, or use pandas directly for standard KDJ.
-
-    # KDJ standard calculation:
+    # Calculate Custom KDJ logic per user requirement
+    import numpy as np
     low_list = df['low'].rolling(9, min_periods=1).min()
     high_list = df['high'].rolling(9, min_periods=1).max()
-    rsv = (df['close'] - low_list) / (high_list - low_list) * 100
+    rsv = (df['close'] - low_list) / (high_list - low_list + 1e-8) * 100
 
-    # SMA for K and D
-    df['kdj_k'] = rsv.ewm(com=2, adjust=False).mean()
-    df['kdj_d'] = df['kdj_k'].ewm(com=2, adjust=False).mean()
-    df['kdj_j'] = 3 * df['kdj_k'] - 2 * df['kdj_d']
+    # a=SMA(RSV,3,1); b=SMA(a,3,1); equivalent to alpha=1/3 EMA
+    k = rsv.ewm(alpha=1/3, adjust=False).mean()
+    d = k.ewm(alpha=1/3, adjust=False).mean()
+    j = 3 * k - 2 * d
+
+    df['kdj_k'] = k
+    df['kdj_d'] = d
+    df['kdj_j'] = j
+
+    xl = j.diff().fillna(0)
+
+    # TJ=IF (XL>0,REF(TJ,1)+1,0);
+    count = 0
+    xl_values = xl.values
+    tj_values = np.zeros(len(df))
+    for i in range(len(xl_values)):
+        if xl_values[i] > 0:
+            count += 1
+        else:
+            count = 0
+        tj_values[i] = count
+    df['kdj_tj'] = tj_values
+
+    # ST=TJ>0 AND XL>PJXL*0.7; where PJXL=IF(TJ>0,SUM(XL,TJ)/TJ,0);
+    st_values = np.zeros(len(df), dtype=int)
+    for i in range(len(df)):
+        t_val = int(tj_values[i])
+        if t_val > 0:
+            pjxl = xl_values[i-t_val+1:i+1].sum() / t_val
+            if xl_values[i] > pjxl * 0.7:
+                st_values[i] = 1
+            else:
+                st_values[i] = 0
+        else:
+            st_values[i] = -1
+    df['kdj_st'] = st_values
 
     return df
 
@@ -100,14 +136,16 @@ def download_stock_list():
     except Exception as e:
         print(f"Error downloading stock list: {e}")
 
-# TDX Servers
+# TDX Servers (prioritize ones known to work)
 TDX_SERVERS = [
+    ('218.75.126.9', 7709),   # 广发证券 (Known to work)
     ('119.147.212.81', 7709), # 招商证券深圳
     ('119.147.164.60', 7709), # 招商证券深圳
     ('106.120.74.86', 7709),  # 招商证券北京
     ('124.74.236.94', 7721),  # 平安证券
-    ('218.75.126.9', 7709),   # 广发证券
     ('114.80.63.12', 7709),   # 东方证券
+    ('119.147.171.206', 7709),
+    ('119.147.171.207', 7709)
 ]
 
 def get_tdx_api():
@@ -129,14 +167,18 @@ def _get_tdx_market(symbol: str) -> int:
         return 1
     return 0
 
-def fetch_tdx_kline(api, symbol: str, market: int, total_bars: int = 1600):
+def fetch_tdx_kline(api, symbol: str, market: int, total_bars: int = None):
     """
     Fetch K-line data in batches of 800 (TDX limit).
-    1600 bars roughly covers 6-7 years of daily data.
+    If total_bars is None, fetches all available historical data (paginating backward).
     """
     dfs = []
     # Loop backward to page through data
-    for start in range(0, total_bars, 800):
+    start = 0
+    while True:
+        if total_bars is not None and start >= total_bars:
+            break
+
         try:
             # 9 = daily K-line
             data = api.get_security_bars(9, market, symbol, start, 800)
@@ -152,6 +194,8 @@ def fetch_tdx_kline(api, symbol: str, market: int, total_bars: int = 1600):
             # If we fetched less than 800, we've hit the beginning of the stock's history
             if len(data) < 800:
                 break
+
+            start += 800
         except Exception as e:
             print(f"Error fetching TDX bars for {symbol} at offset {start}: {e}")
             break
@@ -162,7 +206,7 @@ def fetch_tdx_kline(api, symbol: str, market: int, total_bars: int = 1600):
     # Combine and reverse to get chronological order (oldest to newest)
     full_df = pd.concat(dfs, ignore_index=True)
 
-    # TDX returns descending by default across pages but ascending within pages?
+    # TDX returns descending by default across pages but ascending within pages
     # Let's ensure strict chronological order by date
     if 'datetime' in full_df.columns:
         full_df.sort_values(by='datetime', ascending=True, inplace=True)
@@ -187,7 +231,7 @@ def process_kline_df(df, symbol):
 
 def download_kline_data(symbol, api=None):
     """
-    Fetch for a single stock.
+    Fetch full historical data for a single stock via pytdx.
     Can reuse an existing API connection if provided.
     """
     local_api = False
@@ -197,7 +241,7 @@ def download_kline_data(symbol, api=None):
 
     try:
         market = _get_tdx_market(symbol)
-        df = fetch_tdx_kline(api, symbol, market, total_bars=3200) # Fetch up to 12 years
+        df = fetch_tdx_kline(api, symbol, market, total_bars=None) # Fetch all history
 
         if df.empty:
             return
@@ -212,7 +256,7 @@ def download_kline_data(symbol, api=None):
         df.to_sql('kline_daily', conn, if_exists='append', index=False)
         conn.close()
         if local_api:
-            print(f"Successfully downloaded K-line data for {symbol}.")
+            print(f"Successfully downloaded full K-line data for {symbol}.")
     finally:
         if local_api and getattr(api, 'client', None):
             api.disconnect()
@@ -277,7 +321,7 @@ def sync_all_data():
         return
 
     try:
-        # Pre-clean DB or we can do it row by row. Doing it completely beforehand is faster if full sync.
+        # Pre-clean DB
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("DELETE FROM kline_daily")
@@ -291,15 +335,13 @@ def sync_all_data():
                 print(f"[{i}/{total}] Syncing TDX data...")
 
             market = _get_tdx_market(symbol)
-            df = fetch_tdx_kline(api, symbol, market, total_bars=1600) # Fast sync: last 1600 days
+            df = fetch_tdx_kline(api, symbol, market, total_bars=None) # Full historical sync
 
             if not df.empty:
                 df = process_kline_df(df, symbol)
                 batch_dfs.append(df)
 
-            # Fundamentals are intentionally mocked during full sync to avoid breaking speed/rate limits,
-            # since the user prioritizes K-line downloading speed and the UI does not currently
-            # display fundamental info.
+            # Fundamentals are intentionally mocked during full sync to avoid breaking speed/rate limits
 
             # Insert in batches to speed up SQLite
             if len(batch_dfs) >= batch_size or i == total - 1:

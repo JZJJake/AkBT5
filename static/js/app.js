@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     const stockListEl = document.getElementById('stock-list');
     const searchInput = document.getElementById('search-input');
+    const searchSuggestions = document.getElementById('search-suggestions');
     const chartContainer = document.getElementById('chart-container');
     const currentStockTitle = document.getElementById('current-stock-title');
     const updateListBtn = document.getElementById('update-list-btn');
@@ -11,12 +12,19 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentStock = null;
     let currentPeriod = 'daily';
 
+    let currentMouseY = 0;
+
     // Initialize ECharts
     function initChart() {
         if (chartInstance) {
             chartInstance.dispose();
         }
         chartInstance = echarts.init(chartContainer, 'dark');
+
+        // Track mouse Y position for context-aware tooltips
+        chartInstance.getZr().on('mousemove', function (params) {
+            currentMouseY = params.offsetY;
+        });
 
         // Window resize handler
         window.addEventListener('resize', () => {
@@ -60,12 +68,70 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Handle search
     searchInput.addEventListener('input', (e) => {
-        const term = e.target.value.toLowerCase();
-        const filtered = allStocks.filter(s =>
-            s.symbol.toLowerCase().includes(term) ||
-            s.name.toLowerCase().includes(term)
-        );
+        const term = e.target.value.trim();
+        if (!term) {
+            searchSuggestions.classList.add('hidden');
+            searchSuggestions.innerHTML = '';
+            // Reset main list to initial display
+            renderStockList(allStocks);
+            return;
+        }
+
+        let filtered = [];
+        if (typeof PinyinMatch !== 'undefined' && PinyinMatch.match) {
+            filtered = allStocks.filter(s =>
+                PinyinMatch.match(s.name, term) || s.symbol.includes(term)
+            );
+        } else {
+            // Fallback if pinyin-match failed to load
+            filtered = allStocks.filter(s =>
+                s.symbol.toLowerCase().includes(term.toLowerCase()) ||
+                s.name.toLowerCase().includes(term.toLowerCase())
+            );
+        }
+
+        // Render main list with filtered results
         renderStockList(filtered);
+
+        // Show suggestions dropdown
+        const displaySuggestions = filtered.slice(0, 10);
+        searchSuggestions.innerHTML = '';
+        if (displaySuggestions.length > 0) {
+            displaySuggestions.forEach(stock => {
+                const li = document.createElement('li');
+                li.innerHTML = `<span>${stock.symbol}</span> - <span>${stock.name}</span>`;
+                li.addEventListener('click', () => {
+                    searchInput.value = '';
+                    searchSuggestions.classList.add('hidden');
+                    // Find it in the main list and select it
+                    selectStock(stock, null); // passing null for liElement as we might not have it rendered in sidebar yet
+                    renderStockList(allStocks); // reset list
+                });
+                searchSuggestions.appendChild(li);
+            });
+            searchSuggestions.classList.remove('hidden');
+        } else {
+            searchSuggestions.classList.add('hidden');
+        }
+    });
+
+    // Hide suggestions on outside click
+    document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !searchSuggestions.contains(e.target)) {
+            searchSuggestions.classList.add('hidden');
+        }
+    });
+
+    // Handle Enter key for search
+    searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            if (!searchSuggestions.classList.contains('hidden')) {
+                const firstSuggestion = searchSuggestions.querySelector('li');
+                if (firstSuggestion) {
+                    firstSuggestion.click();
+                }
+            }
+        }
     });
 
     // Select stock
@@ -90,7 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let result = await response.json();
 
             if (result.data && result.data.length > 0) {
-                renderChart(result.data);
+                renderChart(result.data, result.last_close);
             } else {
                 // Auto download if data is missing
                 chartInstance.showLoading({text: '本地无数据，自动下载中...', color: '#ffd700', textColor: '#ffd700', maskColor: 'rgba(0, 0, 0, 0.8)'});
@@ -103,7 +169,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     result = await response.json();
 
                     if (result.data && result.data.length > 0) {
-                        renderChart(result.data);
+                        renderChart(result.data, result.last_close);
                     } else {
                         chartInstance.hideLoading();
                         chartInstance.clear();
@@ -119,7 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Render ECharts
-    function renderChart(data) {
+    function renderChart(data, lastClose) {
         const dates = data.map(item => item.date);
 
         // ECharts requires data in format [open, close, lowest, highest]
@@ -128,6 +194,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const klineData = data.map(item => [item.open, item.close, item.low, item.high]);
 
         const volumes = data.map((item, index) => [index, item.volume, item.open > item.close ? -1 : 1]); // -1 down, 1 up
+
+        const ma20 = data.map(item => item.ma20);
+        const ma205 = data.map(item => item.ma205);
+
+        const markAreas = [];
+        data.forEach((item, index) => {
+            if (item.ztfb3 && index > 0) {
+                let startIdx = Math.max(0, index - 2);
+                let endIdx = index;
+                markAreas.push([
+                    { xAxis: dates[startIdx], yAxis: item.ztfb_maxh },
+                    { xAxis: dates[endIdx], yAxis: item.ztfb_maxl }
+                ]);
+            }
+        });
 
         const macd = data.map(item => item.macd);
         const macds = data.map(item => item.macds);
@@ -142,24 +223,214 @@ document.addEventListener('DOMContentLoaded', () => {
         const downColor = '#0ecb81';
         const downBorderColor = '#0ecb81';
 
+        // Get latest bar stats for overlay
+        const latest = data[data.length - 1] || {};
+        let changeText = (latest.change_pct !== undefined && latest.change_pct !== null) ? latest.change_pct.toFixed(2) + '%' : '0.00%';
+        let shadowText = (latest.upper_shadow_pct !== undefined && latest.upper_shadow_pct !== null) ? latest.upper_shadow_pct.toFixed(2) + '%' : '0.00%';
+        let changeColor = (latest.change_pct > 0) ? '#f6465d' : '#0ecb81';
+
+        // Custom KDJ dot logic for the top right
+        // We need dots for the latest bar and 4 previous bars: 5 dots in total.
+        const stCircles = [];
+        for (let i = 0; i < 5; i++) {
+            let stVal = data[data.length - 1 - i]?.kdj_st;
+            let dotColor = '#808080'; // gray default
+            if (stVal === 1) dotColor = 'red';
+            else if (stVal === 0) dotColor = 'green';
+
+            stCircles.push({
+                type: 'circle',
+                right: (3 + i * 2) + '%',
+                top: '2%',
+                shape: { r: 5 },
+                style: { fill: dotColor }
+            });
+        }
+
+        // Add '连续红：' text before the dots if ST sequence exists
+        const latestTJ = latest.kdj_tj;
+        let continuousRedText = [];
+        if (latest.kdj_st !== undefined && latest.kdj_st !== null && latest.kdj_st !== -1) {
+            continuousRedText = [
+                {
+                    type: 'text',
+                    right: '15%',
+                    top: '2%',
+                    style: {
+                        text: `连续红：${latestTJ}`,
+                        fill: (latestTJ > 0) ? 'red' : 'white',
+                        font: '14px sans-serif'
+                    }
+                }
+            ];
+        }
+
+        // Handle multi-colored KDJ J Line based on ST value
+        const kdjJ_pieces = [];
+        for (let i = 0; i < data.length - 1; i++) {
+            let color = '#d7a1ff'; // Default J color (purple)
+            if (data[i].kdj_st === 1) {
+                color = 'red';
+            } else if (data[i].kdj_st === 0) {
+                color = '#b45078'; // RGB(180,80,120)
+            }
+            kdjJ_pieces.push({
+                gt: i - 1,
+                lte: i,
+                color: color
+            });
+        }
+        // catch the last one
+        if (data.length > 0) {
+            let i = data.length - 1;
+            let color = '#d7a1ff';
+            if (data[i].kdj_st === 1) {
+                color = 'red';
+            } else if (data[i].kdj_st === 0) {
+                color = '#b45078';
+            }
+            kdjJ_pieces.push({
+                gt: i - 1,
+                lte: i,
+                color: color
+            });
+        }
+
         const option = {
             backgroundColor: '#0d1117',
             animation: false,
+            graphic: [
+                {
+                    type: 'text',
+                    left: '12%',
+                    top: '2%',
+                    style: {
+                        text: `涨幅: ${changeText}`,
+                        fill: changeColor,
+                        font: '14px sans-serif',
+                        fontWeight: 'bold'
+                    }
+                },
+                {
+                    type: 'text',
+                    left: '20%',
+                    top: '2%',
+                    style: {
+                        text: `上影线: ${shadowText}`,
+                        fill: '#fff',
+                        font: '14px sans-serif'
+                    }
+                },
+                ...continuousRedText,
+                ...stCircles
+            ],
             tooltip: {
                 trigger: 'axis',
-                axisPointer: { type: 'cross' },
+                axisPointer: {
+                    type: 'cross',
+                    lineStyle: {
+                        color: 'rgba(255, 215, 0, 0.5)',
+                        width: 1,
+                        type: 'solid'
+                    }
+                },
+                backgroundColor: 'rgba(22, 27, 34, 0.8)',
                 borderWidth: 1,
-                borderColor: '#ccc',
+                borderColor: '#30363d',
                 padding: 10,
-                textStyle: { color: '#000' }
+                textStyle: { color: '#ffd700' },
+                position: function (pos, params, el, elRect, size) {
+                    const obj = { top: 10 };
+                    obj[['left', 'right'][+(pos[0] < size.viewSize[0] / 2)]] = 30;
+                    return obj;
+                },
+                formatter: function (params) {
+                    let klineData = null;
+                    let volData = null;
+                    let macdData = [];
+                    let kdjData = [];
+                    let date = '';
+
+                    params.forEach(param => {
+                        date = param.axisValue;
+                        if (param.seriesName === '日线' || param.seriesName === '周线' || param.seriesName === '月线') {
+                            klineData = param.data;
+                        } else if (param.seriesName === '成交量') {
+                            volData = param.data;
+                        } else if (['MACD', 'DIF', 'DEA'].includes(param.seriesName)) {
+                            macdData.push(param);
+                        } else if (['K', 'D', 'J'].includes(param.seriesName)) {
+                            kdjData.push(param);
+                        }
+                    });
+
+                    let res = `<div style="font-weight:bold;margin-bottom:5px;">${date}</div>`;
+
+                    // Determine which grid the mouse is currently hovering over
+                    const height = chartInstance.getHeight();
+
+                    // Map heights roughly according to grid settings:
+                    // K-line: 0% - ~60%
+                    // Volume: ~63% - ~73%
+                    // MACD: ~75% - ~85%
+                    // KDJ: ~88% - ~98%
+                    const yRatio = currentMouseY / height;
+
+                    if (yRatio < 0.60) {
+                        // K-line Grid
+                        if (klineData) {
+                            res += `
+                                <div>开盘: ${klineData[1].toFixed(2)}</div>
+                                <div>收盘: ${klineData[2].toFixed(2)}</div>
+                                <div>最低: ${klineData[3].toFixed(2)}</div>
+                                <div>最高: ${klineData[4].toFixed(2)}</div>
+                            `;
+                        }
+                    } else if (yRatio >= 0.60 && yRatio < 0.74) {
+                        // Volume Grid
+                        if (volData) {
+                            res += `<div>成交量: ${volData[1]}</div>`;
+                        }
+                    } else if (yRatio >= 0.74 && yRatio < 0.86) {
+                        // MACD Grid
+                        if (macdData.length > 0) {
+                            res += `<div style="margin-top:5px;padding-top:5px;">MACD (10,25,7)</div>`;
+                            macdData.forEach(m => {
+                                if (m.data !== undefined && m.data !== null) {
+                                    res += `<div>${m.seriesName}: ${m.data.toFixed(3)}</div>`;
+                                }
+                            });
+                        }
+                    } else {
+                        // KDJ Grid
+                        if (kdjData.length > 0) {
+                            res += `<div style="margin-top:5px;padding-top:5px;">KDJ (9,3,3)</div>`;
+                            kdjData.forEach(k => {
+                                if (k.data !== undefined && k.data !== null) {
+                                    res += `<div>${k.seriesName}: ${k.data.toFixed(3)}</div>`;
+                                }
+                            });
+                        }
+                    }
+
+                    return res;
+                }
             },
             axisPointer: { link: [{ xAxisIndex: 'all' }], label: { backgroundColor: '#777' } },
-            visualMap: {
-                show: false,
-                seriesIndex: 1, // volume series
-                dimension: 2,
-                pieces: [{ value: 1, color: upColor }, { value: -1, color: downColor }]
-            },
+            visualMap: [
+                {
+                    show: false,
+                    seriesIndex: 1, // volume series index logic changed. We'll update the series. (K-line:0, VOL:1, MA:2...)
+                    dimension: 2,
+                    pieces: [{ value: 1, color: upColor }, { value: -1, color: downColor }]
+                },
+                {
+                    show: false,
+                    dimension: 0,
+                    seriesIndex: 9, // J line is series index 9 (K-line:0, VOL:1, MA20:2, MA205:3, MACD_bar:4, DIF:5, DEA:6, K:7, D:8, J:9)
+                    pieces: kdjJ_pieces
+                }
+            ],
             grid: [
                 { left: '10%', right: '8%', height: '50%' }, // K-line
                 { left: '10%', right: '8%', top: '63%', height: '10%' }, // Volume
@@ -190,6 +461,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     itemStyle: {
                         color: upColor, color0: downColor,
                         borderColor: upBorderColor, borderColor0: downBorderColor
+                    },
+                    markLine: {
+                        data: [
+                            {
+                                yAxis: lastClose,
+                                lineStyle: { type: 'dashed', color: 'yellow' },
+                                label: { position: 'end', formatter: ' ' + lastClose.toFixed(2) }
+                            }
+                        ]
+                    },
+                    markArea: {
+                        itemStyle: { color: 'rgba(128, 128, 128, 0.3)' }, // colorgray roughly
+                        data: markAreas
                     }
                 },
                 {
