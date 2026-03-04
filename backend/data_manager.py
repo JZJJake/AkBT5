@@ -1,5 +1,6 @@
 import akshare as ak
 import pandas as pd
+import numpy as np
 import sqlite3
 import os
 import ta
@@ -71,6 +72,54 @@ def calculate_indicators(df):
     if df.empty or len(df) < 30:
         return df
 
+    # Moving Averages
+    df['ma20'] = df['close'].rolling(window=20, min_periods=1).mean()
+    df['ma205'] = df['close'].rolling(window=205, min_periods=1).mean()
+
+    # Pre-close calculation
+    df['pre_close'] = df['close'].shift(1).fillna(df['open'])
+
+    # Change percentage
+    df['change_pct'] = (df['close'] - df['pre_close']) / df['pre_close'] * 100
+
+    # Is Limit Up (approximate +9.8% or more)
+    df['is_limit_up'] = (df['change_pct'] >= 9.8).astype(int)
+
+    # Upper shadow percentage calculation
+    # (High - Max(Open, Close)) / Pre_Close
+    df['upper_shadow_pct'] = (df['high'] - df[['open', 'close']].max(axis=1)) / df['pre_close'] * 100
+
+    # ZTFB3 Logic (3-day consolidation after limit up)
+    df['ztfb3'] = 0
+    df['ztfb_maxh'] = 0.0
+    df['ztfb_maxl'] = 0.0
+
+    is_lu = df['is_limit_up'].values
+    highs = df['high'].values
+    lows = df['low'].values
+    ztfb3 = np.zeros(len(df), dtype=int)
+    ztfb_maxh = np.zeros(len(df))
+    ztfb_maxl = np.zeros(len(df))
+
+    # A limit up followed by 3 days of consolidation
+    for i in range(len(df) - 3):
+        if is_lu[i] == 1:
+            # check next 3 days
+            sub_high = highs[i+1:i+4]
+            sub_low = lows[i+1:i+4]
+            if len(sub_high) == 3:
+                ztfb3[i+3] = 1 # Mark the 3rd day of consolidation
+                ztfb_maxh[i+3] = sub_high.max()
+                ztfb_maxl[i+3] = sub_low.min()
+
+    df['ztfb3'] = ztfb3
+    df['ztfb_maxh'] = ztfb_maxh
+    df['ztfb_maxl'] = ztfb_maxl
+
+    # Drop pre_close as it is not in our schema and was only used for intermediate calculation
+    if 'pre_close' in df.columns:
+        df.drop(columns=['pre_close'], inplace=True)
+
     # Calculate MACD (10, 25, 7) instead of standard (12, 26, 9) per user requirement
     macd = ta.trend.MACD(close=df['close'], window_slow=25, window_fast=10, window_sign=7)
     df['macd'] = macd.macd()
@@ -78,7 +127,6 @@ def calculate_indicators(df):
     df['macdh'] = macd.macd_diff()
 
     # Calculate Custom KDJ logic per user requirement
-    import numpy as np
     low_list = df['low'].rolling(9, min_periods=1).min()
     high_list = df['high'].rolling(9, min_periods=1).max()
     rsv = (df['close'] - low_list) / (high_list - low_list + 1e-8) * 100

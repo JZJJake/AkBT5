@@ -340,7 +340,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 padding: 10,
                 textStyle: { color: '#ffd700' },
                 position: function (pos, params, el, elRect, size) {
-                    const obj = { top: 10 };
+                    const yRatio = pos[1] / size.viewSize[1];
+                    let topPos = 10;
+                    if (yRatio < 0.55) {
+                        topPos = 10;
+                    } else if (yRatio >= 0.55 && yRatio < 0.72) {
+                        topPos = size.viewSize[1] * 0.60;
+                    } else if (yRatio >= 0.72 && yRatio < 0.86) {
+                        topPos = size.viewSize[1] * 0.74;
+                    } else {
+                        topPos = size.viewSize[1] * 0.88;
+                    }
+                    const obj = { top: topPos };
                     obj[['left', 'right'][+(pos[0] < size.viewSize[0] / 2)]] = 30;
                     return obj;
                 },
@@ -349,6 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     let volData = null;
                     let macdData = [];
                     let kdjData = [];
+                    let maData = [];
                     let date = '';
 
                     params.forEach(param => {
@@ -361,6 +373,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             macdData.push(param);
                         } else if (['K', 'D', 'J'].includes(param.seriesName)) {
                             kdjData.push(param);
+                        } else if (['MA20', 'MA205'].includes(param.seriesName)) {
+                            maData.push(param);
                         }
                     });
 
@@ -376,7 +390,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // KDJ: ~88% - ~98%
                     const yRatio = currentMouseY / height;
 
-                    if (yRatio < 0.60) {
+                    if (yRatio < 0.55) {
                         // K-line Grid
                         if (klineData) {
                             res += `
@@ -385,13 +399,18 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <div>最低: ${klineData[3].toFixed(2)}</div>
                                 <div>最高: ${klineData[4].toFixed(2)}</div>
                             `;
+                            maData.forEach(m => {
+                                if (m.data !== undefined && m.data !== null) {
+                                    res += `<div><span style="display:inline-block;margin-right:4px;border-radius:10px;width:10px;height:10px;background-color:${m.color};"></span>${m.seriesName}: ${m.data.toFixed(3)}</div>`;
+                                }
+                            });
                         }
-                    } else if (yRatio >= 0.60 && yRatio < 0.74) {
+                    } else if (yRatio >= 0.55 && yRatio < 0.72) {
                         // Volume Grid
                         if (volData) {
                             res += `<div>成交量: ${volData[1]}</div>`;
                         }
-                    } else if (yRatio >= 0.74 && yRatio < 0.86) {
+                    } else if (yRatio >= 0.72 && yRatio < 0.86) {
                         // MACD Grid
                         if (macdData.length > 0) {
                             res += `<div style="margin-top:5px;padding-top:5px;">MACD (10,25,7)</div>`;
@@ -420,22 +439,22 @@ document.addEventListener('DOMContentLoaded', () => {
             visualMap: [
                 {
                     show: false,
-                    seriesIndex: 1, // volume series index logic changed. We'll update the series. (K-line:0, VOL:1, MA:2...)
+                    seriesIndex: 3, // volume series index. (K-line:0, MA20:1, MA205:2, VOL:3, MACD_bar:4, DIF:5, DEA:6, K:7, D:8, J:9)
                     dimension: 2,
                     pieces: [{ value: 1, color: upColor }, { value: -1, color: downColor }]
                 },
                 {
                     show: false,
                     dimension: 0,
-                    seriesIndex: 9, // J line is series index 9 (K-line:0, VOL:1, MA20:2, MA205:3, MACD_bar:4, DIF:5, DEA:6, K:7, D:8, J:9)
+                    seriesIndex: 9, // J line is series index 9
                     pieces: kdjJ_pieces
                 }
             ],
             grid: [
-                { left: '10%', right: '8%', height: '50%' }, // K-line
-                { left: '10%', right: '8%', top: '63%', height: '10%' }, // Volume
-                { left: '10%', right: '8%', top: '75%', height: '10%' }, // MACD
-                { left: '10%', right: '8%', top: '88%', height: '10%' }  // KDJ
+                { left: '2%', right: '4%', height: '52%' }, // K-line
+                { left: '2%', right: '4%', top: '60%', height: '12%' }, // Volume
+                { left: '2%', right: '4%', top: '74%', height: '12%' }, // MACD
+                { left: '2%', right: '4%', top: '88%', height: '12%' }  // KDJ
             ],
             xAxis: [
                 { type: 'category', data: dates, scale: true, boundaryGap: false, axisLine: { onZero: false }, splitLine: { show: false }, min: 'dataMin', max: 'dataMax', axisPointer: { z: 100 } },
@@ -444,7 +463,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 { type: 'category', gridIndex: 3, data: dates, axisLabel: { show: false } }
             ],
             yAxis: [
-                { scale: true, splitArea: { show: true } },
+                { scale: true, splitArea: { show: false }, splitLine: { show: true, lineStyle: { color: '#30363d', type: 'dashed' } }, position: 'right' },
                 { scale: true, gridIndex: 1, splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
                 { scale: true, gridIndex: 2, splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
                 { scale: true, gridIndex: 3, splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } }
@@ -476,6 +495,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         data: markAreas
                     }
                 },
+                { name: 'MA20', type: 'line', data: ma20, smooth: true, lineStyle: { opacity: 0.5, width: 1, color: '#f5c242' }, symbol: 'none' },
+                { name: 'MA205', type: 'line', data: ma205, smooth: true, lineStyle: { opacity: 0.5, width: 1, color: '#42a5f5' }, symbol: 'none' },
                 {
                     name: '成交量',
                     type: 'bar',
