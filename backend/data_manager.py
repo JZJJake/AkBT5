@@ -51,6 +51,8 @@ def init_db():
             ztfb_maxl REAL,
             kdj_st INTEGER,
             kdj_tj REAL,
+            macd_st_line INTEGER,
+            macd_st_dot INTEGER,
             PRIMARY KEY (symbol, date)
         )
     ''')
@@ -122,9 +124,80 @@ def calculate_indicators(df):
 
     # Calculate MACD (10, 25, 7) instead of standard (12, 26, 9) per user requirement
     macd = ta.trend.MACD(close=df['close'], window_slow=25, window_fast=10, window_sign=7)
-    df['macd'] = macd.macd()
-    df['macds'] = macd.macd_signal()
-    df['macdh'] = macd.macd_diff()
+    df['macd'] = macd.macd() # DIFF
+    df['macds'] = macd.macd_signal() # DEA
+    df['macdh'] = macd.macd_diff() # MACDd / MACD histogram
+
+    # --- Custom MACD Logic ---
+    # XL=DIFF-REF(DIFF,1);
+    # TJ=IF (XL>0,REF(TJ,1)+1,0);
+    # TJ2=IF (XL<0,REF(TJ2,1)+1,0);
+    # PJXL=IF(TJ>0,SUM(XL,TJ)/TJ,0);
+    # PJXL2=IF(TJ2>0,SUM(XL,TJ2)/TJ2,0);
+    # ST=TJ>0 AND XL>PJXL*0.7;
+    # ST2=TJ2>0 AND XL>PJXL2*0.7;
+    # PARTLINE(DIFF,ST,RGB(255,0,0),NOT(ST) AND TJ>0 OR ST2 ,RGB(180,80,120));
+
+    diff_val = df['macd'].values
+    xl_macd = df['macd'].diff().fillna(0).values
+
+    tj_macd = np.zeros(len(df))
+    tj2_macd = np.zeros(len(df))
+    count_tj = 0
+    count_tj2 = 0
+
+    for i in range(len(xl_macd)):
+        if xl_macd[i] > 0:
+            count_tj += 1
+        else:
+            count_tj = 0
+
+        if xl_macd[i] < 0:
+            count_tj2 += 1
+        else:
+            count_tj2 = 0
+
+        tj_macd[i] = count_tj
+        tj2_macd[i] = count_tj2
+
+    macd_st_line = np.zeros(len(df), dtype=int) # 0: default, 1: red, 2: pink
+    for i in range(len(df)):
+        t_val = int(tj_macd[i])
+        t2_val = int(tj2_macd[i])
+
+        pjxl = 0
+        if t_val > 0:
+            pjxl = xl_macd[i-t_val+1:i+1].sum() / t_val
+
+        pjxl2 = 0
+        if t2_val > 0:
+            # Note: XL < 0 here, so sum is negative.
+            # In TDX, XL>PJXL2*0.7 means a less negative number is greater than a more negative number.
+            pjxl2 = xl_macd[i-t2_val+1:i+1].sum() / t2_val
+
+        st = (t_val > 0) and (xl_macd[i] > pjxl * 0.7)
+        st2 = (t2_val > 0) and (xl_macd[i] > pjxl2 * 0.7)
+
+        # PARTLINE(DIFF,ST,RGB(255,0,0),NOT(ST) AND TJ>0 OR ST2 ,RGB(180,80,120));
+        if st:
+            macd_st_line[i] = 1 # Red
+        elif (not st and t_val > 0) or st2:
+            macd_st_line[i] = 2 # Pink RGB(180,80,120)
+        else:
+            macd_st_line[i] = 0 # Default / White in TDX
+
+    df['macd_st_line'] = macd_st_line
+
+    # ST=DEA>REF(DEA,1) AND DEA<DIFF AND MACDd>REF(MACDd,1) ;
+    dea = df['macds'].values
+    macdd = df['macdh'].values
+
+    macd_st_dot = np.zeros(len(df), dtype=int)
+    for i in range(1, len(df)):
+        cond = (dea[i] > dea[i-1]) and (dea[i] < diff_val[i]) and (macdd[i] > macdd[i-1])
+        macd_st_dot[i] = 1 if cond else 0
+
+    df['macd_st_dot'] = macd_st_dot
 
     # Calculate Custom KDJ logic per user requirement
     low_list = df['low'].rolling(9, min_periods=1).min()

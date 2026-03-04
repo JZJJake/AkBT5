@@ -266,17 +266,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
 
-        // Handle multi-colored MACD DIF (Fast Line) based on slope (current > previous)
+        // Handle multi-colored MACD DIF (Fast Line) based on backend logic (macd_st_line)
         const macdDif_pieces = [];
         for (let i = 1; i < data.length; i++) {
-            let color = '#d7a1ff'; // default pink/purple
-            let currDif = data[i].macd;
-            let prevDif = data[i-1].macd;
-            if (currDif > prevDif) {
-                color = 'red'; // slope up
+            let color = '#d7a1ff'; // default pink/purple fallback
+            let stVal = data[i].macd_st_line;
+
+            if (stVal === 1) {
+                color = 'red';
+            } else if (stVal === 2) {
+                color = '#b45078'; // RGB(180,80,120) Pink
             } else {
-                color = '#0ecb81'; // slope down (green)
+                color = 'white'; // default / white in TDX
             }
+
             macdDif_pieces.push({
                 gt: i - 1,
                 lte: i,
@@ -286,7 +289,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // Catch the last segment to make it extend
         if (data.length > 0) {
             let i = data.length - 1;
-            let color = (i > 0 && data[i].macd > data[i-1].macd) ? 'red' : '#0ecb81';
+            let stVal = data[i].macd_st_line;
+            let color = '#d7a1ff';
+            if (stVal === 1) {
+                color = 'red';
+            } else if (stVal === 2) {
+                color = '#b45078';
+            } else {
+                color = 'white';
+            }
             macdDif_pieces.push({
                 gt: i,
                 lte: i + 1,
@@ -295,6 +306,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Handle multi-colored KDJ J Line based on ST value
+
+        // Handle MACD status dots (Top right of MACD grid)
+        // DRAWTEXT_FIX(ISLASTBAR AND ST, 0.98, 0.03, 0, "●"), colorred
+        // ... (up to 5 dots)
+        const macdDots = [];
+        for (let i = 0; i < 5; i++) {
+            let dotData = data[data.length - 1 - i];
+            let stVal = dotData ? dotData.macd_st_dot : 0;
+            let dotColor = stVal === 1 ? 'red' : 'green';
+
+            macdDots.push({
+                type: 'text',
+                right: (2 + i * 2) + '%', // Top Right corner logic
+                top: '75%', // MACD grid top
+                style: {
+                    text: '●',
+                    fill: dotColor,
+                    font: '14px sans-serif'
+                }
+            });
+        }
+
         const kdjJ_pieces = [];
         for (let i = 0; i < data.length - 1; i++) {
             let color = '#d7a1ff'; // Default J color (purple)
@@ -376,29 +409,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         font: '12px sans-serif'
                     }
                 },
-                {
-                    type: 'text',
-                    left: '12%',
-                    top: '2%',
-                    style: {
-                        text: `涨幅: ${changeText}`,
-                        fill: changeColor,
-                        font: '14px sans-serif',
-                        fontWeight: 'bold'
-                    }
-                },
-                {
-                    type: 'text',
-                    left: '20%',
-                    top: '2%',
-                    style: {
-                        text: `上影线: ${shadowText}`,
-                        fill: '#fff',
-                        font: '14px sans-serif'
-                    }
-                },
-                ...continuousRedText,
-                ...stCircles
+                ...macdDots
             ],
             tooltip: {
                 trigger: 'axis',
