@@ -265,6 +265,35 @@ document.addEventListener('DOMContentLoaded', () => {
             ];
         }
 
+
+        // Handle multi-colored MACD DIF (Fast Line) based on slope (current > previous)
+        const macdDif_pieces = [];
+        for (let i = 1; i < data.length; i++) {
+            let color = '#d7a1ff'; // default pink/purple
+            let currDif = data[i].macd;
+            let prevDif = data[i-1].macd;
+            if (currDif > prevDif) {
+                color = 'red'; // slope up
+            } else {
+                color = '#0ecb81'; // slope down (green)
+            }
+            macdDif_pieces.push({
+                gt: i - 1,
+                lte: i,
+                color: color
+            });
+        }
+        // Catch the last segment to make it extend
+        if (data.length > 0) {
+            let i = data.length - 1;
+            let color = (i > 0 && data[i].macd > data[i-1].macd) ? 'red' : '#0ecb81';
+            macdDif_pieces.push({
+                gt: i,
+                lte: i + 1,
+                color: color
+            });
+        }
+
         // Handle multi-colored KDJ J Line based on ST value
         const kdjJ_pieces = [];
         for (let i = 0; i < data.length - 1; i++) {
@@ -483,17 +512,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             },
             axisPointer: { link: [{ xAxisIndex: 'all' }], label: { backgroundColor: '#777' } },
-            visualMap: [
+                    visualMap: [
                 {
                     show: false,
-                    seriesIndex: 3, // volume series index. (K-line:0, MA20:1, MA205:2, VOL:3, MACD_bar:4, DIF:5, DEA:6, K:7, D:8, J:9)
-                    dimension: 2,
+                    dimension: 0,
+                    seriesIndex: 3, // Volume
                     pieces: [{ value: 1, color: upColor }, { value: -1, color: downColor }]
                 },
                 {
                     show: false,
                     dimension: 0,
-                    seriesIndex: 9, // J line is series index 9
+                    seriesIndex: 5, // DIF
+                    pieces: macdDif_pieces
+                },
+                {
+                    show: false,
+                    dimension: 0,
+                    seriesIndex: 8, // J line is series index 8 now (since we removed D)
                     pieces: kdjJ_pieces
                 }
             ],
@@ -561,11 +596,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 },
-                { name: 'DIF', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: macd, lineStyle: { width: 1 } },
-                { name: 'DEA', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: macds, lineStyle: { width: 1 } },
+                { name: 'DIF', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: macd, lineStyle: { width: 1 }, symbol: 'none' },
+                { name: 'DEA', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: macds, lineStyle: { width: 1 }, symbol: 'none' },
 
                 {
-                    name: 'K', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_k, lineStyle: { width: 1 },
+                    name: 'K', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_k, lineStyle: { width: 1 }, symbol: 'none',
                     markLine: {
                         symbol: 'none',
                         silent: true,
@@ -579,9 +614,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 },
                 // User requested: "KDJ只有J和K线" -> hiding D line
-                // { name: 'D', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_d, lineStyle: { width: 1 } },
+                // { name: 'D', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_d, lineStyle: { width: 1 }, symbol: 'none' },
                 {
-                    name: 'J', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_j, lineStyle: { width: 1 },
+                    name: 'J', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_j, lineStyle: { width: 1 }, symbol: 'none',
                     markPoint: {
                         symbol: 'arrow',
                         data: j_buy_signals,

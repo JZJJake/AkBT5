@@ -353,6 +353,11 @@ def sync_all_data():
     download_stock_list()
 
     conn = get_connection()
+    # Drop existing kline table to enforce new schema
+    conn.execute("DROP TABLE IF EXISTS kline_daily")
+    conn.commit()
+    init_db()
+
     try:
         stocks = pd.read_sql_query("SELECT symbol FROM stock_list", conn)['symbol'].tolist()
     except Exception as e:
