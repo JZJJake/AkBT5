@@ -332,11 +332,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const kdjJ_pieces = [];
         for (let i = 0; i < data.length - 1; i++) {
-            let color = '#d7a1ff'; // Default J color (purple)
+            let color = 'white'; // Default J color (white)
             if (data[i].kdj_st === 1) {
-                color = 'red';
-            } else if (data[i].kdj_st === 0) {
-                color = '#b45078'; // RGB(180,80,120)
+                color = 'red'; // Bright red
+            } else if (data[i].kdj_st === 2) {
+                color = 'darkred'; // Dark red
             }
             kdjJ_pieces.push({
                 gt: i - 1,
@@ -347,11 +347,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // catch the last one
         if (data.length > 0) {
             let i = data.length - 1;
-            let color = '#d7a1ff';
+            let color = 'white';
             if (data[i].kdj_st === 1) {
                 color = 'red';
-            } else if (data[i].kdj_st === 0) {
-                color = '#b45078';
+            } else if (data[i].kdj_st === 2) {
+                color = 'darkred';
             }
             kdjJ_pieces.push({
                 gt: i - 1,
@@ -361,9 +361,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
 
+
         // Find J line buy signals based on user TDX logic:
         // KDJJ=(REF(e,2)<a OR e<a) AND REF(e,1)<30 AND e>REF(e,1) AND REF(e,1)<REF(e,2);
         // e = J line (kdj_j), a = K line (kdj_k)
+        // Find J line buy signals based on user TDX logic (TT1):
+        // TT1=(REF(J,2)<K OR J<K) AND J>REF(J,1) AND REF(J,1)<REF(J,2) AND REF(J,1)<30 AND A3;
         const j_buy_signals = [];
         for (let i = 2; i < data.length; i++) {
             let j_curr = data[i].kdj_j;
@@ -371,12 +374,29 @@ document.addEventListener('DOMContentLoaded', () => {
             let j_prev2 = data[i-2].kdj_j;
             let k_curr = data[i].kdj_k;
 
+            // KDJ logic part
             let condition1 = (j_prev2 < k_curr) || (j_curr < k_curr);
             let condition2 = j_prev1 < 30;
             let condition3 = j_curr > j_prev1;
             let condition4 = j_prev1 < j_prev2;
 
-            if (condition1 && condition2 && condition3 && condition4) {
+            // A3 logic part
+            let a3 = false;
+            let close = data[i].close;
+            let open = data[i].open;
+            let m20 = data[i].ma20;
+            let m20_prev = data[i-1].ma20;
+            let m205 = data[i].ma205;
+            let dm205 = m20 - m205;
+            let dm205_prev = m20_prev - data[i-1].ma205;
+            let macdh = data[i].macdh;
+            let macdh_prev = data[i-1].macdh;
+
+            if (close > open && m20 > m20_prev && m20 > m205 && dm205 > dm205_prev && macdh > macdh_prev) {
+                a3 = true;
+            }
+
+            if (condition1 && condition2 && condition3 && condition4 && a3) {
                 j_buy_signals.push({
                     name: 'Buy',
                     coord: [dates[i], j_curr],

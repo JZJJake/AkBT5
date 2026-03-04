@@ -138,15 +138,6 @@ def calculate_indicators(df):
     df['macdh'] = macd.macd_diff() # MACDd / MACD histogram
 
     # --- Custom MACD Logic ---
-    # XL=DIFF-REF(DIFF,1);
-    # TJ=IF (XL>0,REF(TJ,1)+1,0);
-    # TJ2=IF (XL<0,REF(TJ2,1)+1,0);
-    # PJXL=IF(TJ>0,SUM(XL,TJ)/TJ,0);
-    # PJXL2=IF(TJ2>0,SUM(XL,TJ2)/TJ2,0);
-    # ST=TJ>0 AND XL>PJXL*0.7;
-    # ST2=TJ2>0 AND XL>PJXL2*0.7;
-    # PARTLINE(DIFF,ST,RGB(255,0,0),NOT(ST) AND TJ>0 OR ST2 ,RGB(180,80,120));
-
     diff_val = df['macd'].values
     xl_macd = df['macd'].diff().fillna(0).values
 
@@ -180,24 +171,20 @@ def calculate_indicators(df):
 
         pjxl2 = 0
         if t2_val > 0:
-            # Note: XL < 0 here, so sum is negative.
-            # In TDX, XL>PJXL2*0.7 means a less negative number is greater than a more negative number.
             pjxl2 = xl_macd[i-t2_val+1:i+1].sum() / t2_val
 
         st = (t_val > 0) and (xl_macd[i] > pjxl * 0.7)
         st2 = (t2_val > 0) and (xl_macd[i] > pjxl2 * 0.7)
 
-        # PARTLINE(DIFF,ST,RGB(255,0,0),NOT(ST) AND TJ>0 OR ST2 ,RGB(180,80,120));
         if st:
             macd_st_line[i] = 1 # Red
         elif (not st and t_val > 0) or st2:
-            macd_st_line[i] = 2 # Pink RGB(180,80,120)
+            macd_st_line[i] = 2 # Pink
         else:
-            macd_st_line[i] = 0 # Default / White in TDX
+            macd_st_line[i] = 0 # Default
 
     df['macd_st_line'] = macd_st_line
 
-    # ST=DEA>REF(DEA,1) AND DEA<DIFF AND MACDd>REF(MACDd,1) ;
     dea = df['macds'].values
     macdd = df['macdh'].values
 
@@ -208,12 +195,11 @@ def calculate_indicators(df):
 
     df['macd_st_dot'] = macd_st_dot
 
-    # Calculate Custom KDJ logic per user requirement
+    # --- Custom KDJ logic ---
     low_list = df['low'].rolling(9, min_periods=1).min()
     high_list = df['high'].rolling(9, min_periods=1).max()
     rsv = (df['close'] - low_list) / (high_list - low_list + 1e-8) * 100
 
-    # a=SMA(RSV,3,1); b=SMA(a,3,1); equivalent to alpha=1/3 EMA
     k = rsv.ewm(alpha=1/3, adjust=False).mean()
     d = k.ewm(alpha=1/3, adjust=False).mean()
     j = 3 * k - 2 * d
@@ -223,11 +209,10 @@ def calculate_indicators(df):
     df['kdj_j'] = j
 
     xl = j.diff().fillna(0)
-
-    # TJ=IF (XL>0,REF(TJ,1)+1,0);
-    count = 0
     xl_values = xl.values
     tj_values = np.zeros(len(df))
+
+    count = 0
     for i in range(len(xl_values)):
         if xl_values[i] > 0:
             count += 1
@@ -236,18 +221,17 @@ def calculate_indicators(df):
         tj_values[i] = count
     df['kdj_tj'] = tj_values
 
-    # ST=TJ>0 AND XL>PJXL*0.7; where PJXL=IF(TJ>0,SUM(XL,TJ)/TJ,0);
     st_values = np.zeros(len(df), dtype=int)
     for i in range(len(df)):
         t_val = int(tj_values[i])
         if t_val > 0:
             pjxl = xl_values[i-t_val+1:i+1].sum() / t_val
             if xl_values[i] > pjxl * 0.7:
-                st_values[i] = 1
+                st_values[i] = 1 # Bright Red
             else:
-                st_values[i] = 0
+                st_values[i] = 2 # Dark Red
         else:
-            st_values[i] = -1
+            st_values[i] = 0 # White
     df['kdj_st'] = st_values
 
     return df
