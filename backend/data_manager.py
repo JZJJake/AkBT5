@@ -17,6 +17,15 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
 
+    # Check if kline_daily exists and has latest columns
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='kline_daily'")
+    if cursor.fetchone():
+        cursor.execute("PRAGMA table_info(kline_daily)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'macd_st_line' not in columns or 'ma20' not in columns:
+            print("Database schema outdated. Dropping old kline_daily table...")
+            cursor.execute("DROP TABLE kline_daily")
+
     # 股票列表 (Stock List)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS stock_list (
