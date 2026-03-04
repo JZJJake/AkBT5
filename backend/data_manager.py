@@ -74,7 +74,7 @@ def calculate_indicators(df):
 
     # Moving Averages
     df['ma20'] = df['close'].rolling(window=20, min_periods=1).mean()
-    df['ma205'] = df['close'].rolling(window=205, min_periods=1).mean()
+    df['ma205'] = df['ma20'].rolling(window=5, min_periods=1).mean()
 
     # Pre-close calculation
     df['pre_close'] = df['close'].shift(1).fillna(df['open'])

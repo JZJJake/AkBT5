@@ -302,6 +302,26 @@ document.addEventListener('DOMContentLoaded', () => {
             graphic: [
                 {
                     type: 'text',
+                    left: '2%',
+                    top: '74%', // MACD grid top
+                    style: {
+                        text: 'MACD (10, 25, 7)',
+                        fill: '#f5c242',
+                        font: '12px sans-serif'
+                    }
+                },
+                {
+                    type: 'text',
+                    left: '2%',
+                    top: '88%', // KDJ grid top
+                    style: {
+                        text: 'KDJ (9, 3, 3)',
+                        fill: '#f5c242',
+                        font: '12px sans-serif'
+                    }
+                },
+                {
+                    type: 'text',
                     left: '12%',
                     top: '2%',
                     style: {
@@ -513,7 +533,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 { name: 'DIF', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: macd, lineStyle: { width: 1 } },
                 { name: 'DEA', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: macds, lineStyle: { width: 1 } },
 
-                { name: 'K', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_k, lineStyle: { width: 1 } },
+                {
+                    name: 'K', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_k, lineStyle: { width: 1 },
+                    markLine: {
+                        symbol: 'none',
+                        silent: true,
+                        label: { position: 'start', formatter: '{c}', color: 'gray' },
+                        data: [
+                            { yAxis: 0, lineStyle: { type: 'dashed', color: 'gray' } },
+                            { yAxis: 30, lineStyle: { type: 'dashed', color: '#ffb74d' } },
+                            { yAxis: 50, lineStyle: { type: 'dashed', color: '#64b5f6' } },
+                            { yAxis: 80, lineStyle: { type: 'dashed', color: '#81c784' } }
+                        ]
+                    }
+                },
                 { name: 'D', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_d, lineStyle: { width: 1 } },
                 { name: 'J', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_j, lineStyle: { width: 1 } }
             ]
