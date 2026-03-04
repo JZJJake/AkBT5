@@ -578,7 +578,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         ]
                     }
                 },
-                { name: 'D', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_d, lineStyle: { width: 1 } },
+                // User requested: "KDJ只有J和K线" -> hiding D line
+                // { name: 'D', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_d, lineStyle: { width: 1 } },
                 {
                     name: 'J', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_j, lineStyle: { width: 1 },
                     markPoint: {
