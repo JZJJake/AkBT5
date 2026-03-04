@@ -229,7 +229,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let shadowText = (latest.upper_shadow_pct !== undefined && latest.upper_shadow_pct !== null) ? latest.upper_shadow_pct.toFixed(2) + '%' : '0.00%';
         let changeColor = (latest.change_pct > 0) ? '#f6465d' : '#0ecb81';
 
-        // Custom KDJ dot logic for the top right
+        // Custom KDJ dot logic for the KDJ grid (top right of KDJ section)
         // We need dots for the latest bar and 4 previous bars: 5 dots in total.
         const stCircles = [];
         for (let i = 0; i < 5; i++) {
@@ -240,8 +240,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             stCircles.push({
                 type: 'circle',
-                right: (3 + i * 2) + '%',
-                top: '2%',
+                right: (8 + i * 2) + '%',
+                top: '88%',
                 shape: { r: 5 },
                 style: { fill: dotColor }
             });
@@ -254,8 +254,8 @@ document.addEventListener('DOMContentLoaded', () => {
             continuousRedText = [
                 {
                     type: 'text',
-                    right: '15%',
-                    top: '2%',
+                    right: '20%',
+                    top: '88%',
                     style: {
                         text: `连续红：${latestTJ}`,
                         fill: (latestTJ > 0) ? 'red' : 'white',
