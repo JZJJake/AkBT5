@@ -655,14 +655,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 { type: 'category', gridIndex: 3, data: dates, axisLabel: { show: false } }
             ],
             yAxis: [
-                { scale: true, min: 'dataMin', max: 'dataMax', splitArea: { show: false }, splitLine: { show: true, lineStyle: { color: '#30363d', type: 'dashed' } }, position: 'right' },
+                { scale: true, splitArea: { show: false }, splitLine: { show: true, lineStyle: { color: '#30363d', type: 'dashed' } }, position: 'right' },
                 { scale: true, gridIndex: 1, splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
-                { scale: true, gridIndex: 2, min: 'dataMin', max: 'dataMax', splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
-                { scale: true, gridIndex: 3, min: 'dataMin', max: 'dataMax', splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } }
+                { scale: true, gridIndex: 2, splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
+                { scale: true, gridIndex: 3, splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } }
             ],
             dataZoom: [
-                { type: 'inside', xAxisIndex: [0, 1, 2, 3], start: 90, end: 100, filterMode: 'empty' },
-                { show: true, xAxisIndex: [0, 1, 2, 3], type: 'slider', top: '98%', start: 90, end: 100, filterMode: 'empty' }
+                { type: 'inside', xAxisIndex: [0, 1, 2, 3], start: 90, end: 100 },
+                { show: true, xAxisIndex: [0, 1, 2, 3], type: 'slider', top: '98%', start: 90, end: 100 }
             ],
             series: [
                 {
@@ -744,48 +744,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Dynamically fix Y-axis scaling when filterMode is 'empty' to keep performance high
         // but avoid squashed candles.
-        let zoomTimeout = null;
-        chartInstance.on('dataZoom', function (params) {
-            if (!klineData || klineData.length === 0) return;
-
-            if (zoomTimeout) clearTimeout(zoomTimeout);
-
-            zoomTimeout = setTimeout(() => {
-                let start = 0;
-                let end = 100;
-
-                // Extract zoom bounds
-                if (params.batch) {
-                    start = params.batch[0].start;
-                    end = params.batch[0].end;
-                } else {
-                    start = params.start;
-                    end = params.end;
-                }
-
-                // Calculate indices
-                let total = klineData.length;
-                let startIndex = Math.max(0, Math.floor(total * start / 100));
-                let endIndex = Math.min(total - 1, Math.ceil(total * end / 100));
-
-                // Find min/max in current window
-                let currentWindow = klineData.slice(startIndex, endIndex + 1);
-                if(currentWindow.length === 0) return;
-
-                let minVal = Math.min(...currentWindow.map(item => item[2])); // low
-                let maxVal = Math.max(...currentWindow.map(item => item[3])); // high
-
-                // Add slight padding
-                let padding = (maxVal - minVal) * 0.05;
-
-                chartInstance.setOption({
-                    yAxis: [{
-                        min: (minVal - padding).toFixed(2),
-                        max: (maxVal + padding).toFixed(2)
-                    }]
-                });
-            }, 100); // 100ms debounce
-        });
 
         chartInstance.hideLoading();
 
