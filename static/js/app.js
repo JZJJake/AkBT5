@@ -436,7 +436,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
                 ...macdDots
             ],
-            tooltip: {
+            tooltip: { animation: false, enterable: false,
                 trigger: 'axis',
                 axisPointer: {
                     type: 'cross',
@@ -587,13 +587,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 { scale: true, gridIndex: 3, splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } }
             ],
             dataZoom: [
-                { type: 'inside', xAxisIndex: [0, 1, 2, 3], start: 80, end: 100 },
-                { show: true, xAxisIndex: [0, 1, 2, 3], type: 'slider', top: '98%', start: 80, end: 100 }
+                { type: 'inside', xAxisIndex: [0, 1, 2, 3], start: 80, end: 100, filterMode: 'empty' },
+                { show: true, xAxisIndex: [0, 1, 2, 3], type: 'slider', top: '98%', start: 80, end: 100, filterMode: 'empty' }
             ],
             series: [
                 {
                     name: '日线',
                     type: 'candlestick',
+                    large: true,
                     data: klineData,
                     itemStyle: {
                         color: upColor, color0: downColor,
@@ -613,11 +614,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         data: markAreas
                     }
                 },
-                { name: 'MA20', type: 'line', data: ma20, smooth: true, lineStyle: { opacity: 0.5, width: 1, color: '#f5c242' }, symbol: 'none' },
-                { name: 'MA205', type: 'line', data: ma205, smooth: true, lineStyle: { opacity: 0.5, width: 1, color: '#42a5f5' }, symbol: 'none' },
+                { name: 'MA20', type: 'line', sampling: 'lttb', data: ma20, smooth: true, lineStyle: { opacity: 0.5, width: 1, color: '#f5c242' }, symbol: 'none' },
+                { name: 'MA205', type: 'line', sampling: 'lttb', data: ma205, smooth: true, lineStyle: { opacity: 0.5, width: 1, color: '#42a5f5' }, symbol: 'none' },
                 {
                     name: '成交量',
                     type: 'bar',
+                    large: true,
                     xAxisIndex: 1, yAxisIndex: 1,
                     data: volumes
                 },
@@ -632,11 +634,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 },
-                { name: 'DIF', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: macd, lineStyle: { width: 1 }, symbol: 'none' },
-                { name: 'DEA', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: macds, lineStyle: { width: 1 }, symbol: 'none' },
+                { name: 'DIF', type: 'line', xAxisIndex: 2, yAxisIndex: 2, sampling: 'lttb', data: macd, lineStyle: { width: 1 }, symbol: 'none' },
+                { name: 'DEA', type: 'line', xAxisIndex: 2, yAxisIndex: 2, sampling: 'lttb', data: macds, lineStyle: { width: 1 }, symbol: 'none' },
 
                 {
-                    name: 'K', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_k, lineStyle: { width: 1 }, symbol: 'none',
+                    name: 'K', type: 'line', xAxisIndex: 3, yAxisIndex: 3, sampling: 'lttb', data: kdj_k, lineStyle: { width: 1 }, symbol: 'none',
                     markLine: {
                         symbol: 'none',
                         silent: true,
@@ -652,7 +654,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // User requested: "KDJ只有J和K线" -> hiding D line
                 // { name: 'D', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_d, lineStyle: { width: 1 }, symbol: 'none' },
                 {
-                    name: 'J', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_j, lineStyle: { width: 1 }, symbol: 'none',
+                    name: 'J', type: 'line', xAxisIndex: 3, yAxisIndex: 3, sampling: 'lttb', data: kdj_j, lineStyle: { width: 1 }, symbol: 'none',
                     markPoint: {
                         symbol: 'arrow',
                         data: j_buy_signals,
