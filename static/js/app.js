@@ -221,9 +221,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const ma205 = data.map(item => item.ma205);
 
         const ribbonData = [];
-        for (let i = 0; i < data.length - 1; i++) {
-            if (ma20[i] !== null && ma205[i] !== null && ma20[i+1] !== null && ma205[i+1] !== null) {
-                let colorFlag = ma20[i] >= ma205[i] ? 1 : -1;
+        for (let i = 1; i < data.length - 1; i++) {
+            if (ma20[i] !== null && ma205[i] !== null && ma20[i+1] !== null && ma205[i+1] !== null && ma20[i-1] !== null && ma205[i-1] !== null) {
+                let currentDiff = ma20[i] - ma205[i];
+                let prevDiff = ma20[i-1] - ma205[i-1];
+                let colorFlag = 0; // 0 = green, 1 = yellow, 2 = red
+
+                if (ma20[i] > ma205[i]) {
+                    if (currentDiff > prevDiff) {
+                        colorFlag = 2; // RED
+                    } else {
+                        colorFlag = 1; // YELLOW
+                    }
+                } else {
+                    colorFlag = 0; // GREEN
+                }
+
                 ribbonData.push([i, ma20[i], ma205[i], i+1, ma20[i+1], ma205[i+1], colorFlag]);
             }
         }
@@ -242,7 +255,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const color = api.value(6) === 1 ? 'rgba(255, 0, 0, 0.25)' : 'rgba(0, 255, 0, 0.25)';
+            let colorFlag = api.value(6);
+            let color = 'rgba(0, 255, 0, 0.25)'; // default green
+            if (colorFlag === 2) color = 'rgba(255, 0, 0, 0.25)';
+            else if (colorFlag === 1) color = 'rgba(255, 255, 0, 0.25)';
 
             return {
                 type: 'polygon',
@@ -610,19 +626,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 {
                     show: false,
                     dimension: 2,
-                    seriesIndex: 3, // Volume
+                    seriesIndex: 4, // Volume
                     pieces: [{ value: 1, color: upColor }, { value: -1, color: downColor }]
                 },
                 {
                     show: false,
                     dimension: 0,
-                    seriesIndex: 5, // DIF
+                    seriesIndex: 6, // DIF
                     pieces: macdDif_pieces
                 },
                 {
                     show: false,
                     dimension: 0,
-                    seriesIndex: 8, // J line is series index 8 now (since we removed D)
+                    seriesIndex: 9, // J line
                     pieces: kdjJ_pieces
                 }
             ],
@@ -814,11 +830,20 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentStockIndex = -1;
 
     function updateWheel() {
-        if (!currentStock || allStocks.length === 0) {
+        if (allStocks.length === 0) {
             if(wheelPrev) wheelPrev.textContent = '';
             if(wheelCurr) wheelCurr.textContent = '暂无';
             if(wheelNext) wheelNext.textContent = '';
             return;
+        }
+
+        // If no stock is selected but pool has stocks, select the first one silently
+        if (!currentStock && allStocks.length > 0) {
+            currentStock = allStocks[0];
+            currentStockIndex = 0;
+            // optionally load it
+            document.getElementById('current-stock-title').textContent = `${currentStock.name} (${currentStock.symbol})`;
+            loadKLineData(currentStock.symbol);
         }
 
         currentStockIndex = allStocks.findIndex(s => s.symbol === currentStock.symbol);
@@ -873,7 +898,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const stock = allStocks[newIndex];
             document.getElementById('search-input').value = '';
             document.getElementById('search-suggestions').classList.add('hidden');
-            loadStockData(stock.symbol, stock.name);
+
+            // Correct way to load a stock
+            currentStock = { symbol: stock.symbol, name: stock.name };
+            document.getElementById('current-stock-title').textContent = `${stock.name} (${stock.symbol})`;
+            loadKLineData(stock.symbol);
+
             updateWheel();
         }
     }
