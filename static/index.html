@@ -14,11 +14,21 @@
         <aside id="sidebar">
             <!-- Red Zone -->
             <div class="sidebar-header">
-                <h2>股票池 (Stock Pool)</h2>
+                <h2>股票池</h2>
+                <button id="toggle-sidebar-btn" class="icon-btn" title="Toggle Sidebar">◀</button>
             </div>
             <ul id="stock-list">
                 <!-- Stock list will be populated here -->
             </ul>
+            <div id="stock-wheel" class="hidden">
+                <button id="wheel-up-btn" class="wheel-btn">▲</button>
+                <div class="wheel-items">
+                    <div id="wheel-prev" class="wheel-item dim"></div>
+                    <div id="wheel-curr" class="wheel-item highlight"></div>
+                    <div id="wheel-next" class="wheel-item dim"></div>
+                </div>
+                <button id="wheel-down-btn" class="wheel-btn">▼</button>
+            </div>
         </aside>
 
         <main id="main-content">
@@ -54,5 +64,18 @@
     </div>
 
     <script src="/static/js/app.js"></script>
+
+    <div id="confirm-modal" class="modal-overlay hidden">
+        <div class="modal-box">
+            <h3>同步历史数据</h3>
+            <p>这将从网络下载所有A股的最新数据。此操作可能需要几分钟并在后台运行。是否继续？</p>
+            <div class="modal-actions">
+                <button id="modal-cancel-btn" class="action-btn">取消</button>
+                <button id="modal-confirm-btn" class="action-btn primary">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container"></div>
 </body>
 </html>

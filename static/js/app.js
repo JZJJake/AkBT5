@@ -9,6 +9,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const periodButtons = document.querySelectorAll('.period-selectors button');
 
 
+
+    function showToast(message, type = 'info', duration = 3000) {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+
+        container.appendChild(toast);
+
+        // Trigger animation
+        setTimeout(() => toast.classList.add('show'), 10);
+
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 400); // wait for animation
+        }, duration);
+    }
+
     let chartInstance = null;
     let allStocks = [];
     let currentStock = null;
@@ -199,6 +219,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const ma20 = data.map(item => item.ma20);
         const ma205 = data.map(item => item.ma205);
+
+        const ribbonData = [];
+        for (let i = 0; i < data.length - 1; i++) {
+            if (ma20[i] !== null && ma205[i] !== null && ma20[i+1] !== null && ma205[i+1] !== null) {
+                let colorFlag = ma20[i] >= ma205[i] ? 1 : -1;
+                ribbonData.push([i, ma20[i], ma205[i], i+1, ma20[i+1], ma205[i+1], colorFlag]);
+            }
+        }
+
+        function renderRibbonItem(params, api) {
+            const x0 = api.coord([api.value(0), api.value(1)])[0];
+            const y0_ma20 = api.coord([api.value(0), api.value(1)])[1];
+            const y0_ma205 = api.coord([api.value(0), api.value(2)])[1];
+
+            const x1 = api.coord([api.value(3), api.value(4)])[0];
+            const y1_ma20 = api.coord([api.value(3), api.value(4)])[1];
+            const y1_ma205 = api.coord([api.value(3), api.value(5)])[1];
+
+            // Check if coordinates are valid numbers
+            if (isNaN(x0) || isNaN(y0_ma20) || isNaN(x1)) {
+                return;
+            }
+
+            const color = api.value(6) === 1 ? 'rgba(255, 0, 0, 0.25)' : 'rgba(0, 255, 0, 0.25)';
+
+            return {
+                type: 'polygon',
+                shape: {
+                    points: [
+                        [x0, y0_ma20],
+                        [x1, y1_ma20],
+                        [x1, y1_ma205],
+                        [x0, y0_ma205]
+                    ]
+                },
+                style: api.style({ fill: color, stroke: 'none' })
+            };
+        }
 
         const markAreas = [];
         data.forEach((item, index) => {
@@ -614,8 +672,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         data: markAreas
                     }
                 },
-                { name: 'MA20', type: 'line', sampling: 'lttb', data: ma20, smooth: true, lineStyle: { opacity: 0.5, width: 1, color: '#f5c242' }, symbol: 'none' },
-                { name: 'MA205', type: 'line', sampling: 'lttb', data: ma205, smooth: true, lineStyle: { opacity: 0.5, width: 1, color: '#42a5f5' }, symbol: 'none' },
+                { name: 'MA20_Ribbon', type: 'custom', renderItem: renderRibbonItem, data: ribbonData, z: 1, xAxisIndex: 0, yAxisIndex: 0 },
+                { name: 'MA20', type: 'line', sampling: 'lttb', data: ma20, smooth: true, lineStyle: { opacity: 0.8, width: 1, color: '#f5c242' }, symbol: 'none', z: 3 },
+                { name: 'MA205', type: 'line', sampling: 'lttb', data: ma205, smooth: true, lineStyle: { opacity: 0.8, width: 1, color: '#42a5f5' }, symbol: 'none', z: 3 },
                 {
                     name: '成交量',
                     type: 'bar',
@@ -682,17 +741,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 const res = await fetch('/api/screener');
                 const data = await res.json();
                 if (data.error) {
-                    alert('选股出错: ' + data.error);
+                    showToast('选股出错: ' + data.error, 'error');
                     renderStockList(allStocks); // reset
                 } else {
-                    alert('选股完成! 找到符合条件的股票数量: ' + data.stocks.length);
+                    showToast('选股完成! 找到符合条件的股票数量: ' + data.stocks.length, 'success', 5000);
                     // Update sidebar with only matched stocks
                     allStocks = data.stocks;
                     renderStockList(allStocks);
                 }
             } catch (err) {
                 console.error(err);
-                alert('选股请求失败');
+                showToast('选股请求失败', 'error');
             } finally {
                 screenerBtn.disabled = false;
                 screenerBtn.textContent = '选股 (Screener)';
@@ -702,16 +761,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Triggers
 
-    updateListBtn.addEventListener('click', async () => {
-        if (!confirm('这将从网络下载所有A股的数据。此操作可能需要数小时并在后台运行。是否继续？')) {
-            return;
-        }
+    updateListBtn.addEventListener('click', () => {
+        document.getElementById('confirm-modal').classList.remove('hidden');
+    });
+
+    document.getElementById('modal-cancel-btn').addEventListener('click', () => {
+        document.getElementById('confirm-modal').classList.add('hidden');
+    });
+
+    document.getElementById('modal-confirm-btn').addEventListener('click', async () => {
+        document.getElementById('confirm-modal').classList.add('hidden');
         updateListBtn.disabled = true;
         updateListBtn.textContent = '同步中...';
-        await fetch('/api/download', { method: 'POST' });
-        alert('后台全量更新任务已启动。您可以继续浏览已有数据或稍后刷新页面查看新数据。由于数据量庞大，完成需要一定时间。');
-        updateListBtn.disabled = false;
-        updateListBtn.textContent = '一键同步历史数据';
+        showToast('后台正在同步全量数据，请稍候...', 'info', 4000);
+
+        try {
+            await fetch('/api/download', { method: 'POST' });
+            showToast('历史数据同步完成！', 'success');
+            fetchStockList();
+        } catch (e) {
+            showToast('同步失败，请查看后台日志。', 'error');
+        } finally {
+            updateListBtn.disabled = false;
+            updateListBtn.textContent = '一键同步历史数据';
+        }
     });
 
     // Handle period switching
@@ -726,6 +799,103 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
+
+
+    // Sidebar & Wheel Logic
+    const sidebar = document.getElementById('sidebar');
+    const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
+    const stockWheel = document.getElementById('stock-wheel');
+    const wheelPrev = document.getElementById('wheel-prev');
+    const wheelCurr = document.getElementById('wheel-curr');
+    const wheelNext = document.getElementById('wheel-next');
+    const wheelUpBtn = document.getElementById('wheel-up-btn');
+    const wheelDownBtn = document.getElementById('wheel-down-btn');
+
+    let currentStockIndex = -1;
+
+    function updateWheel() {
+        if (!currentStock || allStocks.length === 0) {
+            if(wheelPrev) wheelPrev.textContent = '';
+            if(wheelCurr) wheelCurr.textContent = '暂无';
+            if(wheelNext) wheelNext.textContent = '';
+            return;
+        }
+
+        currentStockIndex = allStocks.findIndex(s => s.symbol === currentStock.symbol);
+
+        if (currentStockIndex > 0) {
+            if(wheelPrev) {
+                wheelPrev.textContent = allStocks[currentStockIndex - 1].name;
+                wheelPrev.title = allStocks[currentStockIndex - 1].symbol;
+            }
+        } else {
+            if(wheelPrev) {
+                wheelPrev.textContent = '';
+                wheelPrev.title = '';
+            }
+        }
+
+        if(wheelCurr) wheelCurr.textContent = currentStock.name;
+
+        if (currentStockIndex !== -1 && currentStockIndex < allStocks.length - 1) {
+            if(wheelNext) {
+                wheelNext.textContent = allStocks[currentStockIndex + 1].name;
+                wheelNext.title = allStocks[currentStockIndex + 1].symbol;
+            }
+        } else {
+            if(wheelNext) {
+                wheelNext.textContent = '';
+                wheelNext.title = '';
+            }
+        }
+    }
+
+    if (toggleSidebarBtn) {
+        toggleSidebarBtn.addEventListener('click', () => {
+            sidebar.classList.toggle('collapsed');
+            if (sidebar.classList.contains('collapsed')) {
+                stockWheel.classList.remove('hidden');
+                updateWheel();
+            } else {
+                stockWheel.classList.add('hidden');
+            }
+            // Resize chart after transition
+            setTimeout(() => {
+                if (chartInstance) chartInstance.resize();
+            }, 300);
+        });
+    }
+
+    function switchWheelStock(offset) {
+        if (currentStockIndex === -1) return;
+        const newIndex = currentStockIndex + offset;
+        if (newIndex >= 0 && newIndex < allStocks.length) {
+            const stock = allStocks[newIndex];
+            document.getElementById('search-input').value = '';
+            document.getElementById('search-suggestions').classList.add('hidden');
+            loadStockData(stock.symbol, stock.name);
+            updateWheel();
+        }
+    }
+
+    if (wheelUpBtn) {
+        wheelUpBtn.addEventListener('click', () => switchWheelStock(-1));
+    }
+    if (wheelDownBtn) {
+        wheelDownBtn.addEventListener('click', () => switchWheelStock(1));
+    }
+
+    // Add mouse wheel support for the 3D wheel container
+    if (stockWheel) {
+        stockWheel.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            if (e.deltaY > 0) {
+                switchWheelStock(1); // scroll down -> next stock
+            } else {
+                switchWheelStock(-1); // scroll up -> prev stock
+            }
+        });
+    }
 
     // Startup
     initChart();
