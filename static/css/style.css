@@ -215,7 +215,7 @@ button[data-period].active {
 
 /* Sidebar Collapse & Wheel */
 #sidebar {
-    transition: width 0.3s ease;
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -304,23 +304,25 @@ button[data-period].active {
 .wheel-item {
     font-size: 14px;
     text-align: center;
-    transition: all 0.3s ease;
+    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.4s ease, color 0.4s ease;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     width: 70px;
+    height: 20px;
+    line-height: 20px;
 }
 
 .wheel-item.dim {
     color: #666;
-    transform: scale(0.85) rotateX(20deg);
-    opacity: 0.6;
+    transform: scale(0.8) rotateX(25deg);
+    opacity: 0.4;
 }
 
 .wheel-item.highlight {
     color: #f5c242;
     font-weight: bold;
-    transform: scale(1.1) translateZ(20px);
+    transform: scale(1.2) translateZ(30px);
     opacity: 1;
     text-shadow: 0 0 8px rgba(245, 194, 66, 0.5);
 }

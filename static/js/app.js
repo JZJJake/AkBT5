@@ -661,8 +661,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 { scale: true, gridIndex: 3, min: 'dataMin', max: 'dataMax', splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } }
             ],
             dataZoom: [
-                { type: 'inside', xAxisIndex: [0, 1, 2, 3], start: 90, end: 100, filterMode: 'filter' },
-                { show: true, xAxisIndex: [0, 1, 2, 3], type: 'slider', top: '98%', start: 90, end: 100, filterMode: 'filter' }
+                { type: 'inside', xAxisIndex: [0, 1, 2, 3], start: 90, end: 100, filterMode: 'empty' },
+                { show: true, xAxisIndex: [0, 1, 2, 3], type: 'slider', top: '98%', start: 90, end: 100, filterMode: 'empty' }
             ],
             series: [
                 {
@@ -739,8 +739,56 @@ document.addEventListener('DOMContentLoaded', () => {
             ]
         };
 
+
         chartInstance.setOption(option);
+
+        // Dynamically fix Y-axis scaling when filterMode is 'empty' to keep performance high
+        // but avoid squashed candles.
+        let zoomTimeout = null;
+        chartInstance.on('dataZoom', function (params) {
+            if (!klineData || klineData.length === 0) return;
+
+            if (zoomTimeout) clearTimeout(zoomTimeout);
+
+            zoomTimeout = setTimeout(() => {
+                let start = 0;
+                let end = 100;
+
+                // Extract zoom bounds
+                if (params.batch) {
+                    start = params.batch[0].start;
+                    end = params.batch[0].end;
+                } else {
+                    start = params.start;
+                    end = params.end;
+                }
+
+                // Calculate indices
+                let total = klineData.length;
+                let startIndex = Math.max(0, Math.floor(total * start / 100));
+                let endIndex = Math.min(total - 1, Math.ceil(total * end / 100));
+
+                // Find min/max in current window
+                let currentWindow = klineData.slice(startIndex, endIndex + 1);
+                if(currentWindow.length === 0) return;
+
+                let minVal = Math.min(...currentWindow.map(item => item[2])); // low
+                let maxVal = Math.max(...currentWindow.map(item => item[3])); // high
+
+                // Add slight padding
+                let padding = (maxVal - minVal) * 0.05;
+
+                chartInstance.setOption({
+                    yAxis: [{
+                        min: (minVal - padding).toFixed(2),
+                        max: (maxVal + padding).toFixed(2)
+                    }]
+                });
+            }, 100); // 100ms debounce
+        });
+
         chartInstance.hideLoading();
+
     }
 
 
@@ -848,6 +896,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         currentStockIndex = allStocks.findIndex(s => s.symbol === currentStock.symbol);
 
+        // If current stock was filtered out (e.g. by screener), default to the first one
+        if (currentStockIndex === -1 && allStocks.length > 0) {
+            currentStock = allStocks[0];
+            currentStockIndex = 0;
+            document.getElementById('current-stock-title').textContent = `${currentStock.name} (${currentStock.symbol})`;
+            loadKLineData(currentStock.symbol);
+        }
+
         if (currentStockIndex > 0) {
             if(wheelPrev) {
                 wheelPrev.textContent = allStocks[currentStockIndex - 1].name;
@@ -884,10 +940,18 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 stockWheel.classList.add('hidden');
             }
-            // Resize chart after transition
-            setTimeout(() => {
+
+            // Smoothly resize chart during the CSS transition (0.4s)
+            let start = null;
+            function step(timestamp) {
+                if (!start) start = timestamp;
+                let progress = timestamp - start;
                 if (chartInstance) chartInstance.resize();
-            }, 300);
+                if (progress < 400) {
+                    window.requestAnimationFrame(step);
+                }
+            }
+            window.requestAnimationFrame(step);
         });
     }
 

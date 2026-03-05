@@ -281,192 +281,18 @@ def _get_tdx_market(symbol: str) -> int:
         return 1
     return 0
 
-def fetch_tdx_kline(api, symbol: str, market: int, total_bars: int = None):
-    """
-    Fetch K-line data in batches of 800 (TDX limit).
-    If total_bars is None, fetches all available historical data (paginating backward).
-    """
-    dfs = []
-    # Loop backward to page through data
-    start = 0
-    while True:
-        if total_bars is not None and start >= total_bars:
-            break
-
-        try:
-            # 9 = daily K-line
-            data = api.get_security_bars(9, market, symbol, start, 800)
-            if not data:
-                break
-
-            df = api.to_df(data)
-            if df.empty:
-                break
-
-            dfs.append(df)
-
-            # If we fetched less than 800, we've hit the beginning of the stock's history
-            if len(data) < 800:
-                break
-
-            start += 800
-        except Exception as e:
-            print(f"Error fetching TDX bars for {symbol} at offset {start}: {e}")
-            break
-
-    if not dfs:
-        return pd.DataFrame()
-
-    # Combine and reverse to get chronological order (oldest to newest)
-    full_df = pd.concat(dfs, ignore_index=True)
-
-    # TDX returns descending by default across pages but ascending within pages
-    # Let's ensure strict chronological order by date
-    if 'datetime' in full_df.columns:
-        full_df.sort_values(by='datetime', ascending=True, inplace=True)
-
-    return full_df
-
-def process_kline_df(df, symbol):
-    if df.empty:
-        return df
-
-    # TDX columns are: datetime, open, close, high, low, vol, amount
-    df = df[['datetime', 'open', 'high', 'low', 'close', 'vol']].copy()
-    df.columns = ['date', 'open', 'high', 'low', 'close', 'volume']
-
-    # TDX datetime is '2023-10-10 15:00'
-    df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
-
-    # Calculate indicators
-    df = calculate_indicators(df)
-    df['symbol'] = symbol
-    return df
-
-def download_kline_data(symbol, api=None):
-    """
-    Fetch historical data for a single stock via pytdx with incremental update support.
-    """
-    local_api = False
-    if api is None:
-        api = get_tdx_api()
-        local_api = True
-        if not api: return
-
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT MAX(date) FROM kline_daily WHERE symbol=?", (symbol,))
-        row = cursor.fetchone()
-        latest_date = row[0] if row and row[0] else None
-
-        market = 1 if symbol.startswith('6') else 0
-        limit = 800 if latest_date else None
-
-        df = fetch_tdx_kline(api, market, symbol, 0, limit)
-        if df is not None and not df.empty:
-            df = calculate_indicators(df)
-
-            if latest_date:
-                df = df[df['date'] > latest_date]
-
-            if not df.empty:
-                df.to_sql('kline_daily', conn, if_exists='append', index=False)
-    except Exception as e:
-        print(f"Error downloading kline for {symbol}: {e}")
-    finally:
-        conn.close()
-        if local_api:
-            api.disconnect()
-
-def download_fundamental_data(symbol, retries=3):
-    """
-    TDX raw financial data is complex binary. We fallback to AkShare for this specific requirement,
-    but we keep it silent and mock if it fails since user prioritizes full sync speed of K-lines.
-    """
-    for attempt in range(retries):
-        try:
-            indicator_df = ak.stock_a_indicator_lg(symbol=symbol)
-            circulating_market_cap = 0.0
-            if not indicator_df.empty:
-                latest = indicator_df.iloc[-1]
-                if 'total_mv' in latest:
-                    circulating_market_cap = float(latest['total_mv'])
-
-            asset_liability_ratio = 0.0
-            operating_cash_flow = 0.0
-
-            conn = get_connection()
-            cursor = conn.cursor()
-            cursor.execute("INSERT OR REPLACE INTO fundamental_data (symbol, circulating_market_cap, asset_liability_ratio, operating_cash_flow) VALUES (?, ?, ?, ?)",
-                           (symbol, circulating_market_cap, asset_liability_ratio, operating_cash_flow))
-            conn.commit()
-            conn.close()
-            return
-        except Exception:
-            if attempt >= retries - 1:
-                # Insert empty
-                conn = get_connection()
-                cursor = conn.cursor()
-                cursor.execute("INSERT OR REPLACE INTO fundamental_data (symbol, circulating_market_cap, asset_liability_ratio, operating_cash_flow) VALUES (?, ?, ?, ?)",
-                               (symbol, 0.0, 0.0, 0.0))
-                conn.commit()
-                conn.close()
-            time.sleep(1)
-
-
-
-def fetch_tdx_kline(api, market, symbol, start_offset=0, limit=None):
-    """
-    Helper function to download historical K-lines in chunks of 800.
-    Returns a single dataframe.
-    """
-    all_data = []
-    chunk_size = 800
-    current_start = start_offset
-
-    while True:
-        data = api.get_security_bars(9, market, symbol, current_start, chunk_size)
-        if not data:
-            break
-        all_data.extend(data)
-        if len(data) < chunk_size:
-            break
-
-        current_start += chunk_size
-        if limit and current_start >= limit:
-            break
-
-    if not all_data:
-        return None
-
-    df = pd.DataFrame(all_data)
-    df['symbol'] = symbol
-    df['datetime'] = pd.to_datetime(df['datetime'])
-    df['date'] = df['datetime'].dt.strftime('%Y-%m-%d')
-    df = df[['symbol', 'date', 'open', 'high', 'low', 'close', 'vol']]
-    df.rename(columns={'vol': 'volume'}, inplace=True)
-
-    # Sort chronologically (oldest to newest)
-    df = df.sort_values(by='date').reset_index(drop=True)
-    return df
-
 def sync_all_data():
     """
-    Downloads the entire stock list, then connects to TDX ONCE to sequentially and blazingly fast
-    download all K-lines without getting rate limited. Supports incremental updates.
+    Downloads the entire stock list, then fetches QFQ K-lines via Akshare.
     """
-    print("Starting sync of all A-share data via PyTDX...")
+    print("Starting sync of all A-share data via Akshare (QFQ)...")
     download_stock_list()
 
-    # Initialize DB (creates table if not exists, checks schema)
     init_db()
 
     conn = get_connection()
     try:
         stocks = pd.read_sql_query("SELECT symbol FROM stock_list", conn)['symbol'].tolist()
-
-        # Determine the latest date for each stock to perform incremental updates
         latest_dates_df = pd.read_sql_query("SELECT symbol, MAX(date) as latest_date FROM kline_daily GROUP BY symbol", conn)
         latest_dates = latest_dates_df.set_index('symbol')['latest_date'].to_dict()
     except Exception as e:
@@ -474,34 +300,32 @@ def sync_all_data():
         conn.close()
         return
 
-    api = get_tdx_api()
-    if not api:
-        return
-
     try:
         total = len(stocks)
-        batch_size = 500
+        batch_size = 100
         combined_df_list = []
 
         for idx, symbol in enumerate(stocks):
-            if idx % 100 == 0:
-                print(f"[{idx}/{total}] Syncing TDX data...")
+            if idx % 10 == 0:
+                print(f"[{idx}/{total}] Syncing Akshare data...")
 
-            market = 1 if symbol.startswith('6') else 0
-
-            # If we already have data, we only need a small chunk to calculate MAs and append new
             is_incremental = symbol in latest_dates and latest_dates[symbol] is not None
-            count = 300 if is_incremental else 800
+            latest_db_date = latest_dates.get(symbol)
 
             try:
-                limit = 800 if is_incremental else None
-                df = fetch_tdx_kline(api, market, symbol, 0, limit)
+                # Need start date to be far back if not incremental
+                # Akshare fetches all historical data by default if no start/end date
+                df = ak.stock_zh_a_hist(symbol=symbol, period="daily", adjust="qfq")
 
                 if df is not None and not df.empty:
+                    df = df[['日期', '开盘', '最高', '最低', '收盘', '成交量']]
+                    df.columns = ['date', 'open', 'high', 'low', 'close', 'volume']
+                    df['symbol'] = symbol
+                    df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
+
                     df = calculate_indicators(df)
 
-                    if is_incremental:
-                        latest_db_date = latest_dates[symbol]
+                    if is_incremental and latest_db_date:
                         df = df[df['date'] > latest_db_date]
 
                     if not df.empty:
@@ -519,11 +343,36 @@ def sync_all_data():
         print("Full sync complete!")
     finally:
         conn.close()
-        api.disconnect()
+
+def download_kline_data(symbol, api=None):
+    """
+    Fetch historical data for a single stock via Akshare with incremental update support.
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT MAX(date) FROM kline_daily WHERE symbol=?", (symbol,))
+        row = cursor.fetchone()
+        latest_date = row[0] if row and row[0] else None
+
+        df = ak.stock_zh_a_hist(symbol=symbol, period="daily", adjust="qfq")
+        if df is not None and not df.empty:
+            df = df[['日期', '开盘', '最高', '最低', '收盘', '成交量']]
+            df.columns = ['date', 'open', 'high', 'low', 'close', 'volume']
+            df['symbol'] = symbol
+            df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
+
+            df = calculate_indicators(df)
+
+            if latest_date:
+                df = df[df['date'] > latest_date]
+
+            if not df.empty:
+                df.to_sql('kline_daily', conn, if_exists='append', index=False)
+    except Exception as e:
+        print(f"Error downloading kline for {symbol}: {e}")
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     init_db()
-    # Test with a single stock
-    # download_stock_list()
-    # download_kline_data("000001", start_date="20200101")
-    # download_fundamental_data("000001")
