@@ -581,14 +581,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 { type: 'category', gridIndex: 3, data: dates, axisLabel: { show: false } }
             ],
             yAxis: [
-                { scale: true, splitArea: { show: false }, splitLine: { show: true, lineStyle: { color: '#30363d', type: 'dashed' } }, position: 'right' },
+                { scale: true, min: 'dataMin', max: 'dataMax', splitArea: { show: false }, splitLine: { show: true, lineStyle: { color: '#30363d', type: 'dashed' } }, position: 'right' },
                 { scale: true, gridIndex: 1, splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
-                { scale: true, gridIndex: 2, splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
-                { scale: true, gridIndex: 3, splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } }
+                { scale: true, gridIndex: 2, min: 'dataMin', max: 'dataMax', splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
+                { scale: true, gridIndex: 3, min: 'dataMin', max: 'dataMax', splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } }
             ],
             dataZoom: [
-                { type: 'inside', xAxisIndex: [0, 1, 2, 3], start: 80, end: 100, filterMode: 'empty' },
-                { show: true, xAxisIndex: [0, 1, 2, 3], type: 'slider', top: '98%', start: 80, end: 100, filterMode: 'empty' }
+                { type: 'inside', xAxisIndex: [0, 1, 2, 3], start: 90, end: 100, filterMode: 'filter' },
+                { show: true, xAxisIndex: [0, 1, 2, 3], type: 'slider', top: '98%', start: 90, end: 100, filterMode: 'filter' }
             ],
             series: [
                 {
