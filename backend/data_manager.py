@@ -10,6 +10,24 @@ from pytdx.hq import TdxHq_API
 
 DB_PATH = "stock_data.db"
 
+# Global state for tracking download progress
+sync_progress = {
+    "status": "idle",
+    "current": 0,
+    "total": 0,
+    "message": ""
+}
+
+def get_sync_progress():
+    return sync_progress
+
+def _update_progress(status, current, total, message):
+    sync_progress['status'] = status
+    sync_progress['current'] = current
+    sync_progress['total'] = total
+    sync_progress['message'] = message
+
+
 def get_connection():
     return sqlite3.connect(DB_PATH)
 
@@ -285,6 +303,7 @@ def sync_all_data():
     """
     Downloads the entire stock list, then fetches QFQ K-lines via Akshare.
     """
+    _update_progress("syncing", 0, 0, "正在更新股票列表...")
     print("Starting sync of all A-share data via Akshare (QFQ)...")
     download_stock_list()
 
@@ -305,7 +324,10 @@ def sync_all_data():
         batch_size = 100
         combined_df_list = []
 
+        _update_progress("syncing", 0, total, "准备下载日线数据...")
         for idx, symbol in enumerate(stocks):
+            if idx % 5 == 0:
+                _update_progress("syncing", idx, total, f"正在同步 {symbol} 数据...")
             if idx % 10 == 0:
                 print(f"[{idx}/{total}] Syncing Akshare data...")
 
@@ -341,8 +363,20 @@ def sync_all_data():
                     combined_df_list = []
 
         print("Full sync complete!")
+        _update_progress("completed", total, total, "同步完成")
+    except Exception as e:
+        _update_progress("error", 0, 0, f"同步发生错误: {str(e)}")
+        print(f"Sync error: {e}")
     finally:
         conn.close()
+        # Reset to idle after a while so UI can reset if needed
+        import threading
+        def reset_status():
+            import time
+            time.sleep(5)
+            if sync_progress['status'] in ['completed', 'error']:
+                _update_progress("idle", 0, 0, "")
+        threading.Thread(target=reset_status).start()
 
 def download_kline_data(symbol, api=None):
     """

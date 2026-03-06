@@ -5,7 +5,7 @@ from pydantic import BaseModel
 import sqlite3
 import pandas as pd
 import json
-from .data_manager import DB_PATH, get_connection, download_stock_list, download_kline_data, sync_all_data
+from .data_manager import DB_PATH, get_connection, download_stock_list, download_kline_data, sync_all_data, get_sync_progress
 
 app = FastAPI(title="A-Share Trader Platform")
 
@@ -165,7 +165,12 @@ def background_download_task(symbol: str = None):
         # User requested update for specific stock
         download_kline_data(symbol)
 
+@app.get("/api/sync_progress")
+def sync_progress_api():
+    return get_sync_progress()
+
 @app.post("/api/download")
+
 def trigger_download(background_tasks: BackgroundTasks, symbol: str = None):
     background_tasks.add_task(background_download_task, symbol)
     return {"message": "Download task started in the background."}

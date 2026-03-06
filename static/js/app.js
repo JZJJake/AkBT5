@@ -29,6 +29,58 @@ document.addEventListener('DOMContentLoaded', () => {
         }, duration);
     }
 
+
+    let syncPollInterval = null;
+
+    function startSyncPolling() {
+        const container = document.getElementById('sync-progress-container');
+        const textEl = document.getElementById('sync-status-text');
+        const pctEl = document.getElementById('sync-percentage');
+        const fillEl = document.getElementById('sync-progress-fill');
+
+        container.classList.remove('hidden');
+
+        if (syncPollInterval) clearInterval(syncPollInterval);
+
+        syncPollInterval = setInterval(async () => {
+            try {
+                const res = await fetch('/api/sync_progress');
+                const data = await res.json();
+
+                if (data.status === 'idle') {
+                    // Usually means it hasn't started or already cleared
+                    return;
+                }
+
+                textEl.textContent = data.message;
+
+                if (data.total > 0) {
+                    let pct = Math.floor((data.current / data.total) * 100);
+                    pctEl.textContent = pct + '%';
+                    fillEl.style.width = pct + '%';
+                }
+
+                if (data.status === 'completed') {
+                    clearInterval(syncPollInterval);
+                    showToast('历史数据同步全部完成！', 'success');
+                    setTimeout(() => container.classList.add('hidden'), 2000);
+                    fetchStockList();
+                    updateListBtn.disabled = false;
+                    updateListBtn.textContent = '一键同步历史数据';
+                } else if (data.status === 'error') {
+                    clearInterval(syncPollInterval);
+                    showToast(data.message, 'error');
+                    setTimeout(() => container.classList.add('hidden'), 4000);
+                    updateListBtn.disabled = false;
+                    updateListBtn.textContent = '一键同步历史数据';
+                }
+
+            } catch (e) {
+                console.error("Error polling sync progress", e);
+            }
+        }, 1000);
+    }
+
     let chartInstance = null;
     let allStocks = [];
     let currentStock = null;
@@ -795,15 +847,13 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('confirm-modal').classList.add('hidden');
         updateListBtn.disabled = true;
         updateListBtn.textContent = '同步中...';
-        showToast('后台正在同步全量数据，请稍候...', 'info', 4000);
 
         try {
             await fetch('/api/download', { method: 'POST' });
-            showToast('历史数据同步完成！', 'success');
-            fetchStockList();
+            // Start polling progress instead of waiting for immediate response
+            startSyncPolling();
         } catch (e) {
-            showToast('同步失败，请查看后台日志。', 'error');
-        } finally {
+            showToast('触发同步失败，请重试。', 'error');
             updateListBtn.disabled = false;
             updateListBtn.textContent = '一键同步历史数据';
         }
