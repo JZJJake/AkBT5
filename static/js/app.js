@@ -217,6 +217,8 @@ document.addEventListener('DOMContentLoaded', () => {
         currentStock = stock;
         currentStockTitle.textContent = `${stock.name} (${stock.symbol})`;
 
+        updateWheel(); // Ensure wheel stays in sync with manual clicks
+
         await loadKLineData(stock.symbol);
     }
 
@@ -447,7 +449,7 @@ document.addEventListener('DOMContentLoaded', () => {
             macdDots.push({
                 type: 'text',
                 right: (2 + i * 2) + '%', // Top Right corner logic
-                top: '75%', // MACD grid top
+                top: '72%', // MACD grid top
                 style: {
                     text: '●',
                     fill: dotColor,
@@ -543,7 +545,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 {
                     type: 'text',
                     left: '2%',
-                    top: '74%', // MACD grid top
+                    top: '73.5%', // MACD grid top
                     style: {
                         text: 'MACD (10, 25, 7)',
                         fill: '#f5c242',
@@ -553,11 +555,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 {
                     type: 'text',
                     left: '2%',
-                    top: '88%', // KDJ grid top
+                    top: '85.5%', // KDJ grid top
                     style: {
                         text: 'KDJ (9, 3, 3)',
                         fill: '#f5c242',
-                        font: '12px sans-serif'
+                        font: '13px sans-serif'
                     }
                 },
                 ...macdDots
@@ -695,16 +697,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             ],
             grid: [
-                { left: '2%', right: '4%', top: '2%', height: '62%' }, // K-line
-                { left: '2%', right: '4%', top: '66%', height: '10%' }, // Volume
-                { left: '2%', right: '4%', top: '77%', height: '10%' }, // MACD
-                { left: '2%', right: '4%', top: '88%', height: '10%' }  // KDJ
+                { left: '2%', right: '4%', top: '2%', height: '58%' }, // K-line
+                { left: '2%', right: '4%', top: '63%', height: '10%' }, // Volume
+                { left: '2%', right: '4%', top: '75%', height: '10%' }, // MACD
+                { left: '2%', right: '4%', top: '86%', height: '11%' }  // KDJ
             ],
             xAxis: [
-                { type: 'category', data: dates, scale: true, boundaryGap: false, axisLine: { onZero: false }, splitLine: { show: false }, min: 'dataMin', max: 'dataMax', axisPointer: { z: 100 } },
-                { type: 'category', gridIndex: 1, data: dates, axisLabel: { show: false } },
-                { type: 'category', gridIndex: 2, data: dates, axisLabel: { show: false } },
-                { type: 'category', gridIndex: 3, data: dates, axisLabel: { show: false } }
+                { type: 'category', data: dates, scale: true, boundaryGap: true, axisLine: { onZero: false }, splitLine: { show: false }, min: 'dataMin', max: 'dataMax', axisPointer: { z: 100 } },
+                { type: 'category', gridIndex: 1, data: dates, boundaryGap: true, axisLabel: { show: false } },
+                { type: 'category', gridIndex: 2, data: dates, boundaryGap: true, axisLabel: { show: false } },
+                { type: 'category', gridIndex: 3, data: dates, boundaryGap: true, axisLabel: { show: false } }
             ],
             yAxis: [
                 { scale: true, splitArea: { show: false }, splitLine: { show: true, lineStyle: { color: '#30363d', type: 'dashed' } }, position: 'right' },
@@ -949,17 +951,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 stockWheel.classList.add('hidden');
             }
 
-            // Smoothly resize chart during the CSS transition (0.4s)
-            let start = null;
-            function step(timestamp) {
-                if (!start) start = timestamp;
-                let progress = timestamp - start;
+            // Performance Fix: Calling resize() on every frame of a CSS transition is extremely expensive.
+            // Instead, we call it once when the transition starts and once when it ends.
+            if (chartInstance) chartInstance.resize();
+            setTimeout(() => {
                 if (chartInstance) chartInstance.resize();
-                if (progress < 400) {
-                    window.requestAnimationFrame(step);
-                }
-            }
-            window.requestAnimationFrame(step);
+            }, 400); // 400ms matches the CSS transition duration
         });
     }
 
@@ -971,10 +968,17 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('search-input').value = '';
             document.getElementById('search-suggestions').classList.add('hidden');
 
-            // Correct way to load a stock
-            currentStock = { symbol: stock.symbol, name: stock.name };
-            document.getElementById('current-stock-title').textContent = `${stock.name} (${stock.symbol})`;
-            loadKLineData(stock.symbol);
+            // Find the list item in sidebar and highlight it properly
+            const listItems = document.querySelectorAll('#stock-list li');
+            let targetLi = null;
+            listItems.forEach(li => {
+                if (li.textContent.includes(stock.symbol)) {
+                    targetLi = li;
+                }
+            });
+
+            // Reuse selectStock for consistent state updates
+            selectStock(stock, targetLi);
 
             updateWheel();
         }
