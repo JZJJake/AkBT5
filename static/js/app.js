@@ -695,10 +695,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             ],
             grid: [
-                { left: '2%', right: '4%', height: '52%' }, // K-line
-                { left: '2%', right: '4%', top: '60%', height: '12%' }, // Volume
-                { left: '2%', right: '4%', top: '74%', height: '12%' }, // MACD
-                { left: '2%', right: '4%', top: '88%', height: '12%' }  // KDJ
+                { left: '2%', right: '4%', top: '2%', height: '62%' }, // K-line
+                { left: '2%', right: '4%', top: '66%', height: '10%' }, // Volume
+                { left: '2%', right: '4%', top: '77%', height: '10%' }, // MACD
+                { left: '2%', right: '4%', top: '88%', height: '10%' }  // KDJ
             ],
             xAxis: [
                 { type: 'category', data: dates, scale: true, boundaryGap: false, axisLine: { onZero: false }, splitLine: { show: false }, min: 'dataMin', max: 'dataMax', axisPointer: { z: 100 } },
