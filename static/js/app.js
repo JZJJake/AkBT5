@@ -343,6 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const macd = data.map(item => item.macd);
         const macds = data.map(item => item.macds);
         const macdh = data.map(item => item.macdh);
+        const volMa20 = data.map(item => item.vol_ma20);
 
         const kdj_k = data.map(item => item.kdj_k);
         const kdj_d = data.map(item => item.kdj_d);
@@ -545,7 +546,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 {
                     type: 'text',
                     left: '2%',
-                    top: '73.5%', // MACD grid top
+                    top: '67.5%', // MACD grid top
                     style: {
                         text: 'MACD (10, 25, 7)',
                         fill: '#f5c242',
@@ -555,7 +556,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 {
                     type: 'text',
                     left: '2%',
-                    top: '85.5%', // KDJ grid top
+                    top: '83.5%', // KDJ grid top
                     style: {
                         text: 'KDJ (9, 3, 3)',
                         fill: '#f5c242',
@@ -582,14 +583,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 position: function (pos, params, el, elRect, size) {
                     const yRatio = pos[1] / size.viewSize[1];
                     let topPos = 10;
-                    if (yRatio < 0.55) {
+                    if (yRatio < 0.48) {
                         topPos = 10;
-                    } else if (yRatio >= 0.55 && yRatio < 0.72) {
-                        topPos = size.viewSize[1] * 0.60;
-                    } else if (yRatio >= 0.72 && yRatio < 0.86) {
-                        topPos = size.viewSize[1] * 0.74;
+                    } else if (yRatio >= 0.48 && yRatio < 0.67) {
+                        topPos = size.viewSize[1] * 0.50;
+                    } else if (yRatio >= 0.67 && yRatio < 0.83) {
+                        topPos = size.viewSize[1] * 0.67;
                     } else {
-                        topPos = size.viewSize[1] * 0.88;
+                        topPos = size.viewSize[1] * 0.83;
                     }
                     const obj = { top: topPos };
                     obj[['left', 'right'][+(pos[0] < size.viewSize[0] / 2)]] = 30;
@@ -624,13 +625,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     const height = chartInstance.getHeight();
 
                     // Map heights roughly according to grid settings:
-                    // K-line: 0% - ~60%
-                    // Volume: ~63% - ~73%
-                    // MACD: ~75% - ~85%
-                    // KDJ: ~88% - ~98%
                     const yRatio = currentMouseY / height;
 
-                    if (yRatio < 0.55) {
+                    if (yRatio < 0.48) {
                         // K-line Grid
                         if (klineData) {
                             res += `
@@ -645,12 +642,12 @@ document.addEventListener('DOMContentLoaded', () => {
                                 }
                             });
                         }
-                    } else if (yRatio >= 0.55 && yRatio < 0.72) {
+                    } else if (yRatio >= 0.48 && yRatio < 0.67) {
                         // Volume Grid
                         if (volData) {
                             res += `<div>成交量: ${volData[1]}</div>`;
                         }
-                    } else if (yRatio >= 0.72 && yRatio < 0.86) {
+                    } else if (yRatio >= 0.67 && yRatio < 0.83) {
                         // MACD Grid
                         if (macdData.length > 0) {
                             res += `<div style="margin-top:5px;padding-top:5px;">MACD (10,25,7)</div>`;
@@ -697,10 +694,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             ],
             grid: [
-                { left: '2%', right: '4%', top: '2%', height: '58%' }, // K-line
-                { left: '2%', right: '4%', top: '63%', height: '10%' }, // Volume
-                { left: '2%', right: '4%', top: '75%', height: '10%' }, // MACD
-                { left: '2%', right: '4%', top: '86%', height: '11%' }  // KDJ
+                { left: '2%', right: '4%', top: '2%', height: '48%' }, // K-line (reduced to give more room below)
+                { left: '2%', right: '4%', top: '53%', height: '14%' }, // Volume
+                { left: '2%', right: '4%', top: '69%', height: '14%' }, // MACD
+                { left: '2%', right: '4%', top: '85%', height: '14%' }  // KDJ
             ],
             xAxis: [
                 { type: 'category', data: dates, scale: true, boundaryGap: true, axisLine: { onZero: false }, splitLine: { show: false }, min: 'dataMin', max: 'dataMax', axisPointer: { z: 100 } },
@@ -751,6 +748,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     large: true,
                     xAxisIndex: 1, yAxisIndex: 1,
                     data: volumes
+                },
+                {
+                    name: 'Vol_MA20',
+                    type: 'line',
+                    xAxisIndex: 1, yAxisIndex: 1,
+                    symbol: 'none',
+                    lineStyle: { color: '#ff00ff', width: 1 },
+                    data: volMa20
                 },
                 {
                     name: 'MACD', type: 'bar', xAxisIndex: 2, yAxisIndex: 2,

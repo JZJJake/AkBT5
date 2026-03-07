@@ -73,6 +73,7 @@ def init_db():
             is_limit_up BOOLEAN,
             ma20 REAL,
             ma205 REAL,
+            vol_ma20 REAL,
             ztfb3 BOOLEAN,
             ztfb_maxh REAL,
             ztfb_maxl REAL,
@@ -104,6 +105,9 @@ def calculate_indicators(df):
     # Moving Averages
     df['ma20'] = df['close'].rolling(window=20, min_periods=1).mean()
     df['ma205'] = df['ma20'].rolling(window=5, min_periods=1).mean()
+
+    # Volume MA20
+    df['vol_ma20'] = df['volume'].rolling(window=20, min_periods=1).mean()
 
     # Pre-close calculation
     df['pre_close'] = df['close'].shift(1).fillna(df['open'])

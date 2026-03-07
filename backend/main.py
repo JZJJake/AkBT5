@@ -31,23 +31,27 @@ def get_stocks():
 def run_screener():
     conn = get_connection()
     try:
-        # Prevent memory bomb by only loading the last 15 days of data across all stocks.
+        # Prevent memory bomb by only loading the last 60 days of data across all stocks
+        # (need more days to calculate reliable weekly KDJ).
         max_date_df = pd.read_sql_query("SELECT MAX(date) FROM kline_daily", conn)
         max_date_str = max_date_df.iloc[0, 0]
 
         if not max_date_str:
             return {"error": "No data in database", "stocks": []}
 
-        cutoff_date = (pd.to_datetime(max_date_str) - pd.Timedelta(days=15)).strftime('%Y-%m-%d')
+        # We need at least 9 weeks (~63 days) of data to calculate weekly KDJ. Let's fetch 100 days.
+        cutoff_date = (pd.to_datetime(max_date_str) - pd.Timedelta(days=100)).strftime('%Y-%m-%d')
 
-        df = pd.read_sql_query("SELECT symbol, date, open, close, volume, ma20, ma205, macdh, kdj_k, kdj_j FROM kline_daily WHERE date >= ?", conn, params=(cutoff_date,))
+        # Load daily data needed for A3 and daily KDJJ, plus required columns for weekly resampling
+        df = pd.read_sql_query("SELECT symbol, date, open, high, low, close, volume, ma20, ma205, macdh, kdj_k, kdj_j FROM kline_daily WHERE date >= ?", conn, params=(cutoff_date,))
 
         if df.empty:
             return {"error": "No recent data", "stocks": []}
 
+        df['date'] = pd.to_datetime(df['date'])
         df = df.sort_values(by=['symbol', 'date']).reset_index(drop=True)
 
-        # Calculate shifted columns within groups
+        # Calculate shifted columns within groups for daily conditions
         df['m20_1'] = df.groupby('symbol')['ma20'].shift(1)
         df['macdh_1'] = df.groupby('symbol')['macdh'].shift(1)
         df['dm205'] = df['ma20'] - df['ma205']
@@ -56,33 +60,66 @@ def run_screener():
         df['j_1'] = df.groupby('symbol')['kdj_j'].shift(1)
         df['j_2'] = df.groupby('symbol')['kdj_j'].shift(2)
 
-        # We only want to evaluate the last row for each symbol
-        latest = df.groupby('symbol').tail(1).copy()
+        # We evaluate the daily condition on the last row for each symbol
+        latest_daily = df.groupby('symbol').tail(1).copy()
 
-        # Removed missing fundamental data filters (JYJE, Market Cap, STAR) as requested.
-        # final condition relies strictly on pure price action / technicals: A3 AND KDJJ
+        cond_a3 = (latest_daily['close'] > latest_daily['open']) & \
+                  (latest_daily['ma20'] > latest_daily['m20_1']) & \
+                  (latest_daily['ma20'] > latest_daily['ma205']) & \
+                  (latest_daily['dm205'] > latest_daily['dm205_1']) & \
+                  (latest_daily['macdh'] > latest_daily['macdh_1'])
 
-        cond_a3 = (latest['close'] > latest['open']) & \
-                  (latest['ma20'] > latest['m20_1']) & \
-                  (latest['ma20'] > latest['ma205']) & \
-                  (latest['dm205'] > latest['dm205_1']) & \
-                  (latest['macdh'] > latest['macdh_1'])
+        cond_kdjj_daily = ((latest_daily['j_2'] < latest_daily['kdj_k']) | (latest_daily['kdj_j'] < latest_daily['kdj_k'])) & \
+                    (latest_daily['j_1'] < 30) & \
+                    (latest_daily['kdj_j'] > latest_daily['j_1']) & \
+                    (latest_daily['j_1'] < latest_daily['j_2'])
 
-        cond_kdjj = ((latest['j_2'] < latest['kdj_k']) | (latest['kdj_j'] < latest['kdj_k'])) & \
-                    (latest['j_1'] < 30) & \
-                    (latest['kdj_j'] > latest['j_1']) & \
-                    (latest['j_1'] < latest['j_2'])
+        daily_cond = cond_a3 & cond_kdjj_daily & (latest_daily['volume'] > 0)
+        daily_pass_symbols = latest_daily[daily_cond]['symbol'].tolist()
 
-        final_cond = cond_a3 & cond_kdjj & (latest['volume'] > 0)
-
-        selected_symbols = latest[final_cond]['symbol'].tolist()
-
-        if not selected_symbols:
+        if not daily_pass_symbols:
             return {"error": None, "stocks": []}
 
-        placeholders = ','.join(['?'] * len(selected_symbols))
+        # Optimization: Only calculate weekly KDJ for stocks that passed the daily screener
+        df_filtered = df[df['symbol'].isin(daily_pass_symbols)].copy()
+        df_filtered.set_index('date', inplace=True)
+
+        final_symbols = []
+        for sym, group in df_filtered.groupby('symbol'):
+            if len(group) < 30: # Not enough data for weekly indicator calculation
+                continue
+
+            # Resample to weekly
+            weekly = group.resample('W-FRI').agg({
+                'high': 'max',
+                'low': 'min',
+                'close': 'last'
+            }).dropna()
+
+            if len(weekly) < 2:
+                continue
+
+            # Calculate Weekly KDJ
+            low_list = weekly['low'].rolling(9, min_periods=1).min()
+            high_list = weekly['high'].rolling(9, min_periods=1).max()
+            rsv = (weekly['close'] - low_list) / (high_list - low_list + 1e-8) * 100
+
+            # ewm equivalent to TDX SMA(..., 3, 1)
+            k = rsv.ewm(alpha=1/3, adjust=False).mean()
+            d = k.ewm(alpha=1/3, adjust=False).mean()
+            j = 3 * k - 2 * d
+
+            # Weekly KDJ J line upward condition: current J > previous J
+            j_values = j.values
+            if j_values[-1] > j_values[-2]:
+                final_symbols.append(sym)
+
+        if not final_symbols:
+            return {"error": None, "stocks": []}
+
+        placeholders = ','.join(['?'] * len(final_symbols))
         query_names = f"SELECT symbol, name FROM stock_list WHERE symbol IN ({placeholders})"
-        df_selected = pd.read_sql_query(query_names, conn, params=selected_symbols)
+        df_selected = pd.read_sql_query(query_names, conn, params=final_symbols)
 
         return {"error": None, "stocks": df_selected.to_dict(orient="records")}
 
