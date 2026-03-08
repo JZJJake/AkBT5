@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const currentStockTitle = document.getElementById('current-stock-title');
     const updateListBtn = document.getElementById('update-list-btn');
     const screenerBtn = document.getElementById('screener-btn');
+    const backtestBtn = document.getElementById('backtest-btn');
     const periodButtons = document.querySelectorAll('.period-selectors button');
 
 
@@ -216,6 +217,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         currentStock = stock;
         currentStockTitle.textContent = `${stock.name} (${stock.symbol})`;
+
+        if (backtestBtn) backtestBtn.disabled = false;
 
         updateWheel(); // Ensure wheel stays in sync with manual clicks
 
@@ -985,6 +988,115 @@ document.addEventListener('DOMContentLoaded', () => {
             updateWheel();
         }
     }
+
+    // Modal elements
+    const backtestModal = document.getElementById('backtest-modal');
+    const closeBtModalBtn = document.getElementById('modal-close-bt-btn');
+
+    closeBtModalBtn.addEventListener('click', () => {
+        backtestModal.classList.add('hidden');
+    });
+
+    backtestBtn.addEventListener('click', async () => {
+        if (!currentStock) return;
+        const symbol = currentStock.symbol;
+
+        backtestBtn.textContent = '回测中...';
+        backtestBtn.disabled = true;
+
+        try {
+            const response = await fetch(`/api/backtest/${symbol}`);
+            const result = await response.json();
+
+            if (result.error) {
+                showToast(`回测失败: ${result.error}`, 'error');
+                return;
+            }
+
+            // Fill Modal Summary
+            document.getElementById('backtest-symbol').textContent = `${currentStock.name} (${symbol})`;
+            document.getElementById('bt-initial').textContent = result.summary.initial_capital.toFixed(2);
+            document.getElementById('bt-final').textContent = result.summary.final_capital.toFixed(2);
+
+            const profitEl = document.getElementById('bt-profit');
+            profitEl.textContent = `${result.summary.total_profit_pct.toFixed(2)}%`;
+            profitEl.className = 'value ' + (result.summary.total_profit_pct >= 0 ? 'up' : 'down');
+
+            document.getElementById('bt-trades').textContent = result.summary.total_trades;
+            document.getElementById('bt-winrate').textContent = `${result.summary.win_rate.toFixed(2)}%`;
+
+            // Fill Table
+            const tbody = document.querySelector('#backtest-table tbody');
+            tbody.innerHTML = '';
+
+            result.trades.forEach(t => {
+                const tr = document.createElement('tr');
+
+                const profitClass = t.profit_pct >= 0 ? 'up' : 'down';
+
+                tr.innerHTML = `
+                    <td>${t.buy_date}</td>
+                    <td>${t.buy_price.toFixed(2)}</td>
+                    <td>${t.sell_date}</td>
+                    <td>${t.sell_reason}</td>
+                    <td>${t.sell_price.toFixed(2)}</td>
+                    <td class="${profitClass}">${t.profit_pct.toFixed(2)}%</td>
+                    <td>${t.holding_days}</td>
+                    <td>${t.capital_after.toFixed(2)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            backtestModal.classList.remove('hidden');
+
+            // Optionally, add markers to K-Line
+            // ECharts MarkPoints for Buy/Sell
+            if (result.trades.length > 0 && chartInstance) {
+                const markPointData = [];
+                result.trades.forEach(t => {
+                    markPointData.push({
+                        name: 'Buy',
+                        coord: [t.buy_date, t.buy_price],
+                        value: '买',
+                        itemStyle: { color: '#ff4d4f' },
+                        symbolOffset: [0, 20],
+                        symbol: 'arrow'
+                    });
+                    markPointData.push({
+                        name: 'Sell',
+                        coord: [t.sell_date, t.sell_price],
+                        value: '卖',
+                        itemStyle: { color: '#52c41a' },
+                        symbolOffset: [0, -20],
+                        symbol: 'arrow',
+                        symbolRotate: 180
+                    });
+                });
+
+                const option = chartInstance.getOption();
+                option.series[0].markPoint = {
+                    data: markPointData,
+                    label: {
+                        show: true,
+                        color: '#fff',
+                        fontSize: 10,
+                        formatter: function (param) {
+                            return param.value;
+                        }
+                    }
+                };
+                chartInstance.setOption(option);
+            }
+
+        } catch (error) {
+            console.error('Backtest error:', error);
+            showToast('请求回测数据出错', 'error');
+        } finally {
+            backtestBtn.textContent = '模拟回测';
+            backtestBtn.disabled = false;
+        }
+    });
+
 
     if (wheelUpBtn) {
         wheelUpBtn.addEventListener('click', () => switchWheelStock(-1));
