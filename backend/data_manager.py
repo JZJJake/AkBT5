@@ -40,7 +40,7 @@ def init_db():
     if cursor.fetchone():
         cursor.execute("PRAGMA table_info(kline_daily)")
         columns = [col[1] for col in cursor.fetchall()]
-        if 'macd_st_line' not in columns or 'ma20' not in columns:
+        if 'macd_st_line' not in columns or 'ma20' not in columns or 'vol_ma20' not in columns:
             print("Database schema outdated. Dropping old kline_daily table...")
             cursor.execute("DROP TABLE kline_daily")
 

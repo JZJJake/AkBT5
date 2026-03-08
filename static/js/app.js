@@ -673,7 +673,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             },
             axisPointer: { link: [{ xAxisIndex: 'all' }], label: { backgroundColor: '#777' } },
-                    visualMap: [
+            visualMap: [
                 {
                     show: false,
                     dimension: 2,
@@ -683,13 +683,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 {
                     show: false,
                     dimension: 0,
-                    seriesIndex: 6, // DIF
+                    seriesIndex: 7, // DIF
                     pieces: macdDif_pieces
                 },
                 {
                     show: false,
                     dimension: 0,
-                    seriesIndex: 9, // J line
+                    seriesIndex: 10, // J line
                     pieces: kdjJ_pieces
                 }
             ],
@@ -745,7 +745,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 {
                     name: '成交量',
                     type: 'bar',
-                    large: true,
+                    large: false,
                     xAxisIndex: 1, yAxisIndex: 1,
                     data: volumes
                 },
@@ -768,11 +768,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 },
-                { name: 'DIF', type: 'line', xAxisIndex: 2, yAxisIndex: 2, sampling: 'lttb', data: macd, lineStyle: { width: 1 }, symbol: 'none' },
-                { name: 'DEA', type: 'line', xAxisIndex: 2, yAxisIndex: 2, sampling: 'lttb', data: macds, lineStyle: { width: 1 }, symbol: 'none' },
+                { name: 'DIF', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: macd, lineStyle: { width: 1 }, symbol: 'none' },
+                { name: 'DEA', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: macds, lineStyle: { width: 1 }, symbol: 'none' },
 
                 {
-                    name: 'K', type: 'line', xAxisIndex: 3, yAxisIndex: 3, sampling: 'lttb', data: kdj_k, lineStyle: { width: 1 }, symbol: 'none',
+                    name: 'K', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_k, lineStyle: { width: 1 }, symbol: 'none',
                     markLine: {
                         symbol: 'none',
                         silent: true,
@@ -788,7 +788,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // User requested: "KDJ只有J和K线" -> hiding D line
                 // { name: 'D', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_d, lineStyle: { width: 1 }, symbol: 'none' },
                 {
-                    name: 'J', type: 'line', xAxisIndex: 3, yAxisIndex: 3, sampling: 'lttb', data: kdj_j, lineStyle: { width: 1 }, symbol: 'none',
+                    name: 'J', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kdj_j, lineStyle: { width: 1 }, symbol: 'none',
                     markPoint: {
                         symbol: 'arrow',
                         data: j_buy_signals,
