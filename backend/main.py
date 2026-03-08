@@ -153,37 +153,48 @@ def get_kline(symbol: str, period: str = Query("daily")):
             return {"symbol": symbol, "data": []}
 
         df['date'] = pd.to_datetime(df['date'])
-        df.set_index('date', inplace=True)
-
         if period == "weekly":
-            # Resample to weekly K-line
-            df = df.resample('W-FRI').agg({
-                'open': 'first',
-                'high': 'max',
-                'low': 'min',
-                'close': 'last',
-                'volume': 'sum'
-            }).dropna()
+            # Group by ISO week year and week number. This inherently only includes actual trading days in the calculation.
+            df['year_week'] = df['date'].dt.isocalendar().year.astype(str) + '-' + df['date'].dt.isocalendar().week.astype(str).str.zfill(2)
 
-            # Recalculate indicators for weekly
-            from data_manager import calculate_indicators
+            weekly_data = []
+            for name, group in df.groupby('year_week'):
+                if not group.empty:
+                    weekly_data.append({
+                        'date': group['date'].iloc[-1], # End of week date
+                        'open': group['open'].iloc[0],
+                        'high': group['high'].max(),
+                        'low': group['low'].min(),
+                        'close': group['close'].iloc[-1],
+                        'volume': group['volume'].sum()
+                    })
+            df = pd.DataFrame(weekly_data)
+
+            # Recalculate indicators for weekly based on actual traded weeks
+            from backend.data_manager import calculate_indicators
             df = calculate_indicators(df)
 
         elif period == "monthly":
-            # Resample to monthly K-line
-            df = df.resample('ME').agg({
-                'open': 'first',
-                'high': 'max',
-                'low': 'min',
-                'close': 'last',
-                'volume': 'sum'
-            }).dropna()
+            # Group by year and month. This only includes actual trading days in the calculation.
+            df['year_month'] = df['date'].dt.year.astype(str) + '-' + df['date'].dt.month.astype(str).str.zfill(2)
 
-            # Recalculate indicators for monthly
-            from data_manager import calculate_indicators
+            monthly_data = []
+            for name, group in df.groupby('year_month'):
+                if not group.empty:
+                    monthly_data.append({
+                        'date': group['date'].iloc[-1], # End of month date
+                        'open': group['open'].iloc[0],
+                        'high': group['high'].max(),
+                        'low': group['low'].min(),
+                        'close': group['close'].iloc[-1],
+                        'volume': group['volume'].sum()
+                    })
+            df = pd.DataFrame(monthly_data)
+
+            # Recalculate indicators for monthly based on actual traded months
+            from backend.data_manager import calculate_indicators
             df = calculate_indicators(df)
 
-        df.reset_index(inplace=True)
         df['date'] = df['date'].dt.strftime('%Y-%m-%d')
         df['symbol'] = symbol
 
