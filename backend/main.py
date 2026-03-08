@@ -5,16 +5,29 @@ from pydantic import BaseModel
 import sqlite3
 import pandas as pd
 import json
-from data_manager import DB_PATH, get_connection, download_stock_list, download_kline_data, sync_all_data, get_sync_progress
+import os
+import sys
+
+# Ensure the parent directory is in the path to allow either module execution or script execution
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+from backend.data_manager import DB_PATH, get_connection, download_stock_list, download_kline_data, sync_all_data, get_sync_progress
 
 app = FastAPI(title="A-Share Trader Platform")
 
+import os
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+
 # Mount static files
-app.mount("/static", StaticFiles(directory="../static"), name="static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/")
 async def read_index():
-    return FileResponse('static/index.html')
+    return FileResponse(os.path.join(STATIC_DIR, 'index.html'))
 
 @app.get("/api/stocks")
 def get_stocks():
