@@ -426,3 +426,72 @@ button[data-period].active {
     background: #f5c242;
     transition: width 0.3s ease;
 }
+
+/* Backtest Modal */
+.backtest-content {
+    width: 600px;
+    max-width: 90%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.backtest-summary {
+    display: flex;
+    justify-content: space-between;
+    background-color: var(--bg-color);
+    padding: 15px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+}
+
+.summary-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.summary-item .label {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-bottom: 5px;
+}
+
+.summary-item .value {
+    font-size: 16px;
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
+.backtest-table-container {
+    flex-grow: 1;
+    overflow-y: auto;
+    margin-bottom: 15px;
+    border: 1px solid var(--border-color);
+}
+
+#backtest-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+#backtest-table th, #backtest-table td {
+    padding: 10px;
+    text-align: center;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 13px;
+}
+
+#backtest-table th {
+    background-color: var(--bg-color);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+#backtest-table tbody tr:hover {
+    background-color: rgba(255,215,0,0.1);
+}
+
+.profit-pos { color: var(--up-color); }
+.profit-neg { color: var(--down-color); }
