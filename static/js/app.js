@@ -269,7 +269,17 @@ document.addEventListener('DOMContentLoaded', () => {
         // In ECharts candlestick, it's [open, close, lowest, highest] by default for item[1], item[2], item[3], item[4]
         const klineData = data.map(item => [item.open, item.close, item.low, item.high]);
 
-        const volumes = data.map((item, index) => [index, item.volume, item.open > item.close ? -1 : 1]); // -1 down, 1 up
+        const volumesUp = [];
+        const volumesDown = [];
+        data.forEach((item, index) => {
+            if (item.close >= item.open) {
+                volumesUp.push([index, item.volume, 1]);
+                volumesDown.push([index, 0, -1]);
+            } else {
+                volumesUp.push([index, 0, 1]);
+                volumesDown.push([index, item.volume, -1]);
+            }
+        });
 
         const ma20 = data.map(item => item.ma20);
         const ma205 = data.map(item => item.ma205);
@@ -397,43 +407,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
 
-        // Handle multi-colored MACD DIF (Fast Line) based on backend logic (macd_st_line)
+        // Optimize multi-colored MACD DIF (Fast Line) visual map
         const macdDif_pieces = [];
-        for (let i = 1; i < data.length; i++) {
-            let color = '#d7a1ff'; // default pink/purple fallback
-            let stVal = data[i].macd_st_line;
-
-            if (stVal === 1) {
-                color = 'red';
-            } else if (stVal === 2) {
-                color = '#b45078'; // RGB(180,80,120) Pink
-            } else {
-                color = 'white'; // default / white in TDX
-            }
-
-            macdDif_pieces.push({
-                gt: i - 1,
-                lte: i,
-                color: color
-            });
-        }
-        // Catch the last segment to make it extend
         if (data.length > 0) {
-            let i = data.length - 1;
-            let stVal = data[i].macd_st_line;
-            let color = '#d7a1ff';
-            if (stVal === 1) {
-                color = 'red';
-            } else if (stVal === 2) {
-                color = '#b45078';
-            } else {
-                color = 'white';
+            let startIdx = 0;
+            let currentColor = 'white';
+
+            const getColor = (stVal) => {
+                if (stVal === 1) return 'red';
+                if (stVal === 2) return '#b45078';
+                return 'white';
+            };
+
+            currentColor = getColor(data[1] ? data[1].macd_st_line : data[0].macd_st_line);
+
+            for (let i = 1; i < data.length; i++) {
+                let color = getColor(data[i].macd_st_line);
+                if (color !== currentColor) {
+                    macdDif_pieces.push({ gt: startIdx - 1, lte: i - 1, color: currentColor });
+                    startIdx = i;
+                    currentColor = color;
+                }
             }
-            macdDif_pieces.push({
-                gt: i,
-                lte: i + 1,
-                color: color
-            });
+            macdDif_pieces.push({ gt: startIdx - 1, lte: data.length, color: currentColor });
         }
 
         // Handle multi-colored KDJ J Line based on ST value
@@ -459,34 +455,29 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
+        // Optimize multi-colored KDJ J Line visual map
         const kdjJ_pieces = [];
-        for (let i = 0; i < data.length - 1; i++) {
-            let color = 'white'; // Default J color (white)
-            if (data[i].kdj_st === 1) {
-                color = 'red'; // Bright red
-            } else if (data[i].kdj_st === 2) {
-                color = 'darkred'; // Dark red
-            }
-            kdjJ_pieces.push({
-                gt: i - 1,
-                lte: i,
-                color: color
-            });
-        }
-        // catch the last one
         if (data.length > 0) {
-            let i = data.length - 1;
-            let color = 'white';
-            if (data[i].kdj_st === 1) {
-                color = 'red';
-            } else if (data[i].kdj_st === 2) {
-                color = 'darkred';
+            let startIdx = 0;
+            let currentColor = 'white';
+
+            const getColor = (stVal) => {
+                if (stVal === 1) return 'red';
+                if (stVal === 2) return 'darkred';
+                return 'white';
+            };
+
+            currentColor = getColor(data[0].kdj_st);
+
+            for (let i = 0; i < data.length; i++) {
+                let color = getColor(data[i].kdj_st);
+                if (color !== currentColor) {
+                    kdjJ_pieces.push({ gt: startIdx - 1, lte: i - 1, color: currentColor });
+                    startIdx = i;
+                    currentColor = color;
+                }
             }
-            kdjJ_pieces.push({
-                gt: i - 1,
-                lte: i,
-                color: color
-            });
+            kdjJ_pieces.push({ gt: startIdx - 1, lte: data.length, color: currentColor });
         }
 
 
@@ -674,22 +665,17 @@ document.addEventListener('DOMContentLoaded', () => {
             },
             axisPointer: { link: [{ xAxisIndex: 'all' }], label: { backgroundColor: '#777' } },
             visualMap: [
-                {
-                    show: false,
-                    dimension: 2,
-                    seriesIndex: 4, // Volume
-                    pieces: [{ value: 1, color: upColor }, { value: -1, color: downColor }]
-                },
+
                 {
                     show: false,
                     dimension: 0,
-                    seriesIndex: 7, // DIF
+                    seriesIndex: 8, // DIF
                     pieces: macdDif_pieces
                 },
                 {
                     show: false,
                     dimension: 0,
-                    seriesIndex: 10, // J line
+                    seriesIndex: 11, // J line
                     pieces: kdjJ_pieces
                 }
             ],
@@ -743,11 +729,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 { name: 'MA20', type: 'line', sampling: 'lttb', data: ma20, smooth: true, lineStyle: { opacity: 0.8, width: 1, color: '#f5c242' }, symbol: 'none', z: 3 },
                 { name: 'MA205', type: 'line', sampling: 'lttb', data: ma205, smooth: true, lineStyle: { opacity: 0.8, width: 1, color: '#42a5f5' }, symbol: 'none', z: 3 },
                 {
-                    name: '成交量',
+                    name: '成交量(涨)',
                     type: 'bar',
-                    large: false,
+                    large: true,
+                    stack: 'volume',
                     xAxisIndex: 1, yAxisIndex: 1,
-                    data: volumes
+                    data: volumesUp,
+                    itemStyle: { color: upColor }
+                },
+                {
+                    name: '成交量(跌)',
+                    type: 'bar',
+                    large: true,
+                    stack: 'volume',
+                    xAxisIndex: 1, yAxisIndex: 1,
+                    data: volumesDown,
+                    itemStyle: { color: downColor }
                 },
                 {
                     name: 'Vol_MA20',
