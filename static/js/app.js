@@ -270,7 +270,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // ECharts requires data in format [open, close, lowest, highest]
         // But our data is [open, high, low, close]
         // In ECharts candlestick, it's [open, close, lowest, highest] by default for item[1], item[2], item[3], item[4]
-        const klineData = data.map(item => [item.open, item.close, item.low, item.high]);
+        // We also append percentage change to item[5] to be read by tooltip
+        const klineData = data.map((item, index) => {
+            let preClose = index === 0 ? (item.open) : data[index - 1].close;
+            let pctChange = ((item.close - preClose) / preClose * 100).toFixed(2);
+            return [item.open, item.close, item.low, item.high, pctChange];
+        });
 
         const volumesUp = [];
         const volumesDown = [];
@@ -601,7 +606,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     params.forEach(param => {
                         date = param.axisValue;
                         if (param.seriesName === '日线' || param.seriesName === '周线' || param.seriesName === '月线') {
-                            klineData = param.data;
+                            // param.value contains the array [axisValue, open, close, lowest, highest, pctChange]
+                            // which correctly maps our item[5] to param.value[5] instead of param.data[4]
+                            klineData = param.value;
                         } else if (param.seriesName === '成交量') {
                             volData = param.data;
                         } else if (['MACD', 'DIF', 'DEA'].includes(param.seriesName)) {
@@ -624,7 +631,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (yRatio < 0.48) {
                         // K-line Grid
                         if (klineData) {
+                            let pct = klineData[5];
+                            let pctColor = pct >= 0 ? '#ff4d4f' : '#52c41a';
                             res += `
+                                <div>涨幅: <span style="color:${pctColor};font-weight:bold;">${pct}%</span></div>
                                 <div>开盘: ${klineData[1].toFixed(2)}</div>
                                 <div>收盘: ${klineData[2].toFixed(2)}</div>
                                 <div>最低: ${klineData[3].toFixed(2)}</div>

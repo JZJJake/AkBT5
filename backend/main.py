@@ -52,8 +52,8 @@ def run_screener():
         if not max_date_str:
             return {"error": "No data in database", "stocks": []}
 
-        # We need at least 9 weeks (~63 days) of data to calculate weekly KDJ. Let's fetch 100 days.
-        cutoff_date = (pd.to_datetime(max_date_str) - pd.Timedelta(days=100)).strftime('%Y-%m-%d')
+        # We need at least 150 days to calculate robust weekly MACD (EMA25 needs more history). Let's fetch 180 days.
+        cutoff_date = (pd.to_datetime(max_date_str) - pd.Timedelta(days=180)).strftime('%Y-%m-%d')
 
         # Load daily data needed for A3 and daily KDJJ, plus required columns for weekly resampling
         df = pd.read_sql_query("SELECT symbol, date, open, high, low, close, volume, ma20, ma205, macdh, kdj_k, kdj_j FROM kline_daily WHERE date >= ?", conn, params=(cutoff_date,))
@@ -93,38 +93,51 @@ def run_screener():
         if not daily_pass_symbols:
             return {"error": None, "stocks": []}
 
-        # Optimization: Only calculate weekly KDJ for stocks that passed the daily screener
+        # Optimization: Only calculate weekly indicator for stocks that passed the daily screener
         df_filtered = df[df['symbol'].isin(daily_pass_symbols)].copy()
-        df_filtered.set_index('date', inplace=True)
 
         final_symbols = []
+
+        # Group to actual weekly periods
+        df_filtered['year_week'] = df_filtered['date'].dt.isocalendar().year.astype(str) + '-' + df_filtered['date'].dt.isocalendar().week.astype(str).str.zfill(2)
+
         for sym, group in df_filtered.groupby('symbol'):
-            if len(group) < 30: # Not enough data for weekly indicator calculation
+            if len(group) < 30: # Not enough data
                 continue
 
-            # Resample to weekly
-            weekly = group.resample('W-FRI').agg({
-                'high': 'max',
-                'low': 'min',
-                'close': 'last'
-            }).dropna()
+            weekly_data = []
+            for name, w_group in group.groupby('year_week'):
+                if not w_group.empty:
+                    weekly_data.append({
+                        'date': w_group['date'].iloc[-1],
+                        'close': w_group['close'].iloc[-1]
+                    })
 
-            if len(weekly) < 2:
+            weekly = pd.DataFrame(weekly_data)
+
+            if len(weekly) < 3:
                 continue
 
-            # Calculate Weekly KDJ
-            low_list = weekly['low'].rolling(9, min_periods=1).min()
-            high_list = weekly['high'].rolling(9, min_periods=1).max()
-            rsv = (weekly['close'] - low_list) / (high_list - low_list + 1e-8) * 100
+            # Calculate Weekly MA20
+            weekly['ma20'] = weekly['close'].rolling(window=20, min_periods=1).mean()
 
-            # ewm equivalent to TDX SMA(..., 3, 1)
-            k = rsv.ewm(alpha=1/3, adjust=False).mean()
-            d = k.ewm(alpha=1/3, adjust=False).mean()
-            j = 3 * k - 2 * d
+            # Calculate Weekly MACD (10, 25, 7)
+            import ta
+            macd = ta.trend.MACD(close=weekly['close'], window_slow=25, window_fast=10, window_sign=7)
+            weekly['macdh'] = macd.macd_diff()
 
-            # Weekly KDJ J line upward condition: current J > previous J
-            j_values = j.values
-            if j_values[-1] > j_values[-2]:
+            # Shifted MACDH
+            weekly['macdh_1'] = weekly['macdh'].shift(1)
+            weekly['macdh_2'] = weekly['macdh'].shift(2)
+
+            # Weekly Condition:
+            # 1. Close > MA20
+            # 2. Previous MACDH > Pre-Previous MACDH OR Current MACDH > Previous MACDH
+            cond_w_close = weekly['close'].iloc[-1] > weekly['ma20'].iloc[-1]
+            cond_w_macd1 = weekly['macdh_1'].iloc[-1] > weekly['macdh_2'].iloc[-1]
+            cond_w_macd2 = weekly['macdh'].iloc[-1] > weekly['macdh_1'].iloc[-1]
+
+            if cond_w_close and (cond_w_macd1 or cond_w_macd2):
                 final_symbols.append(sym)
 
         if not final_symbols:
@@ -239,49 +252,47 @@ def run_backtest(symbol: str):
         df_dt = df.copy()
         df_dt.set_index('date', inplace=True)
 
-        # Calculate weekly KDJ expanding window
-        # To avoid lookahead, we group by week and take the last available value of the week up to that day.
-        # Actually, standard TDX logic evaluates the weekly indicator based on the week's *current* state.
-        # So on Wednesday, the "Weekly" KDJ is calculated using Mon-Wed data.
-        # A simpler robust approximation: resample the history up to `current_date` to weekly, and take the last two J values.
+        # Group to actual weekly periods
+        df['year_week'] = df['date'].dt.isocalendar().year.astype(str) + '-' + df['date'].dt.isocalendar().week.astype(str).str.zfill(2)
 
-        # Optimizing this: calculate rolling weekly aggregates.
-        # Since standard weekly KDJ uses Friday closes (or last trading day of week),
-        # we can compute the weekly series, then map it back to daily.
+        weekly_data = []
+        for name, w_group in df.groupby('year_week'):
+            if not w_group.empty:
+                weekly_data.append({
+                    'year_week': name,
+                    'close': w_group['close'].iloc[-1]
+                })
 
-        weekly_df = df_dt.resample('W-FRI').agg({
-            'high': 'max',
-            'low': 'min',
-            'close': 'last'
-        }).dropna()
+        weekly_df = pd.DataFrame(weekly_data)
 
-        low_list = weekly_df['low'].rolling(9, min_periods=1).min()
-        high_list = weekly_df['high'].rolling(9, min_periods=1).max()
-        rsv = (weekly_df['close'] - low_list) / (high_list - low_list + 1e-8) * 100
-        k = rsv.ewm(alpha=1/3, adjust=False).mean()
-        d = k.ewm(alpha=1/3, adjust=False).mean()
-        j = 3 * k - 2 * d
+        # Calculate Weekly MA20
+        weekly_df['ma20'] = weekly_df['close'].rolling(window=20, min_periods=1).mean()
 
-        weekly_df['week_j'] = j
-        weekly_df['week_j_prev'] = j.shift(1)
-        weekly_df['week_j_upward'] = weekly_df['week_j'] > weekly_df['week_j_prev']
+        # Calculate Weekly MACD (10, 25, 7)
+        import ta
+        macd = ta.trend.MACD(close=weekly_df['close'], window_slow=25, window_fast=10, window_sign=7)
+        weekly_df['macdh'] = macd.macd_diff()
 
-        # We need to map the weekly J condition to the daily timeframe *without* look-ahead bias.
-        # The true "Weekly J" value on Wednesday only uses data up to Wednesday.
-        # Calculating rolling weekly KDJ point-in-time for every day is slow.
-        # Approximation avoiding lookahead: For any day, use the weekly J computed at the END of the PREVIOUS week.
-        # This guarantees we aren't using future data, though it delays the signal slightly.
-        # (Alternatively, you could evaluate the weekly condition intra-week, but that requires row-by-row weekly re-aggregation)
+        # Shifted MACDH
+        weekly_df['macdh_1'] = weekly_df['macdh'].shift(1)
+        weekly_df['macdh_2'] = weekly_df['macdh'].shift(2)
 
-        # We shift the weekly signal by 1 week, so the signal generated on Friday is applied to the *following* week.
-        weekly_df['shifted_week_j_upward'] = weekly_df['week_j_upward'].shift(1).fillna(False)
+        # Weekly Condition:
+        # 1. Close > MA20
+        # 2. Previous MACDH > Pre-Previous MACDH OR Current MACDH > Previous MACDH
+        cond_w_close = weekly_df['close'] > weekly_df['ma20']
+        cond_w_macd1 = weekly_df['macdh_1'] > weekly_df['macdh_2']
+        cond_w_macd2 = weekly_df['macdh'] > weekly_df['macdh_1']
 
-        # Now, group daily dates by the Friday they fall under, and map the shifted signal.
-        # `week_end` is the Friday of the CURRENT week.
-        # By mapping `shifted_week_j_upward`, we are applying the PREVIOUS week's J condition to this week.
-        df['week_end'] = df['date'] + pd.to_timedelta((4 - df['date'].dt.dayofweek) % 7, unit='d')
-        df = pd.merge(df, weekly_df[['shifted_week_j_upward']], left_on='week_end', right_index=True, how='left')
-        df['week_j_upward'] = df['shifted_week_j_upward'].fillna(False)
+        weekly_df['week_cond'] = cond_w_close & (cond_w_macd1 | cond_w_macd2)
+
+        # We need to map the weekly condition to the daily timeframe *without* look-ahead bias.
+        # Approximation avoiding lookahead: For any day, use the weekly condition computed at the END of the PREVIOUS week.
+        weekly_df['shifted_week_cond'] = weekly_df['week_cond'].shift(1).fillna(False)
+
+        # Merge back to daily
+        df = pd.merge(df, weekly_df[['year_week', 'shifted_week_cond']], on='year_week', how='left')
+        df['week_buy_cond'] = df['shifted_week_cond'].fillna(False)
 
         # Pre-calculate shifted values for conditions
         df['m20_1'] = df['ma20'].shift(1)
@@ -292,7 +303,7 @@ def run_backtest(symbol: str):
         df['j_1'] = df['kdj_j'].shift(1)
         df['j_2'] = df['kdj_j'].shift(2)
 
-        # Buy Condition: A3 + Daily KDJJ + Weekly J upward
+        # Buy Condition: A3 + Daily KDJJ + Weekly MACD/MA20 Condition
         cond_a3 = (df['close'] > df['open']) & \
                   (df['ma20'] > df['m20_1']) & \
                   (df['ma20'] > df['ma205']) & \
@@ -304,15 +315,18 @@ def run_backtest(symbol: str):
                     (df['kdj_j'] > df['j_1']) & \
                     (df['j_1'] < df['j_2'])
 
-        df['buy_signal'] = cond_a3 & cond_kdjj_daily & df['week_j_upward'] & (df['volume'] > 0)
+        df['buy_signal'] = cond_a3 & cond_kdjj_daily & df['week_buy_cond'] & (df['volume'] > 0)
 
-        # Sell Condition: Yesterday J > 80, Today J < Yesterday J
-        df['sell_signal'] = (df['j_1'] > 80) & (df['kdj_j'] < df['j_1'])
+        # Pre-calculate shifted values for sell conditions
+        df['macd_dif_1'] = df['macd'].shift(1)
+        df['macd_dif_2'] = df['macd'].shift(2)
+        df['pre_close'] = df['close'].shift(1).fillna(df['open'])
 
         trades = []
         position = False
         buy_price = 0
         buy_date = None
+        buy_idx = -1
 
         initial_capital = 100000.0
         capital = initial_capital
@@ -329,45 +343,79 @@ def run_backtest(symbol: str):
                 position = True
                 buy_price = row['close']
                 buy_date = row['date'].strftime('%Y-%m-%d')
+                buy_idx = i
 
                 # Calculate shares (ignoring fees for now)
                 shares = capital / buy_price
                 capital = 0
 
-            elif position and row['sell_signal']:
-                # Sell all at close price
-                position = False
+            elif position:
+                # Sell Conditions are evaluated after entering the position
+
+                # Condition 1: Single day price change > 5%
+                daily_pct_change = (row['close'] - row['pre_close']) / row['pre_close'] * 100
+                cond_sell_1 = daily_pct_change > 5
+
+                # Condition 2: Daily MACD Fast Line (DIF) turns downward
+                # (Current DIF < Previous DIF) AND (Previous DIF >= Pre-Previous DIF)
+                cond_sell_2 = (row['macd'] < row['macd_dif_1']) and (row['macd_dif_1'] >= row['macd_dif_2'])
+
+                # Condition 3: Stop-loss at -3% from buy price
+                # If current low drops below buy_price * 0.97, it triggers stop loss. We sell at stop_loss price or open if gap down.
+                stop_loss_price = buy_price * 0.97
+                cond_sell_3 = row['low'] <= stop_loss_price
+
+                sell_reason = ""
                 sell_price = row['close']
-                sell_date = row['date'].strftime('%Y-%m-%d')
 
-                capital = shares * sell_price
-                shares = 0
+                if cond_sell_3:
+                    sell_reason = "Stop Loss (-3%)"
+                    sell_price = stop_loss_price if row['open'] > stop_loss_price else row['open']
+                elif cond_sell_1:
+                    sell_reason = "Daily > 5%"
+                elif cond_sell_2:
+                    sell_reason = "MACD DIF Down"
 
-                profit_pct = (sell_price - buy_price) / buy_price * 100
-                total_trades += 1
-                if profit_pct > 0:
-                    total_wins += 1
+                if sell_reason:
+                    position = False
+                    sell_date = row['date'].strftime('%Y-%m-%d')
 
-                trades.append({
-                    'buy_date': buy_date,
-                    'buy_price': round(buy_price, 2),
-                    'sell_date': sell_date,
-                    'sell_price': round(sell_price, 2),
-                    'profit_pct': round(profit_pct, 2),
-                    'capital_after': round(capital, 2)
-                })
+                    capital = shares * sell_price
+                    shares = 0
+
+                    profit_pct = (sell_price - buy_price) / buy_price * 100
+                    total_trades += 1
+                    if profit_pct > 0:
+                        total_wins += 1
+
+                    holding_days = i - buy_idx
+
+                    trades.append({
+                        'buy_date': buy_date,
+                        'buy_price': round(buy_price, 2),
+                        'sell_date': sell_date,
+                        'sell_reason': sell_reason,
+                        'sell_price': round(sell_price, 2),
+                        'profit_pct': round(profit_pct, 2),
+                        'holding_days': holding_days,
+                        'capital_after': round(capital, 2)
+                    })
 
         # If still holding at the end, mark it with current price
         if position:
             last_price = df.iloc[-1]['close']
             capital = shares * last_price
             profit_pct = (last_price - buy_price) / buy_price * 100
+            holding_days = len(df) - 1 - buy_idx
+
             trades.append({
                 'buy_date': buy_date,
                 'buy_price': round(buy_price, 2),
                 'sell_date': 'Holding',
+                'sell_reason': 'None',
                 'sell_price': round(last_price, 2),
                 'profit_pct': round(profit_pct, 2),
+                'holding_days': holding_days,
                 'capital_after': round(capital, 2)
             })
 
