@@ -502,11 +502,13 @@ document.addEventListener('DOMContentLoaded', () => {
             let j_prev2 = data[i-2].kdj_j;
             let k_curr = data[i].kdj_k;
 
-            // KDJ logic part
-            let condition1 = (j_prev2 < k_curr) || (j_curr < k_curr);
+            // Daily KDJ Condition:
+            // 1. J > K OR J > J_2
+            // 2. Previous J (j_1) < 30
+            // 3. Current J > Previous J
+            let condition1 = (j_curr > k_curr) || (j_curr > j_prev2);
             let condition2 = j_prev1 < 30;
             let condition3 = j_curr > j_prev1;
-            let condition4 = j_prev1 < j_prev2;
 
             // A3 logic part
             let a3 = false;
@@ -524,7 +526,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 a3 = true;
             }
 
-            if (condition1 && condition2 && condition3 && condition4 && a3) {
+            if (condition1 && condition2 && condition3 && a3) {
                 j_buy_signals.push({
                     name: 'Buy',
                     coord: [dates[i], j_curr],

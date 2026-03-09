@@ -82,10 +82,13 @@ def run_screener():
                   (latest_daily['dm205'] > latest_daily['dm205_1']) & \
                   (latest_daily['macdh'] > latest_daily['macdh_1'])
 
-        cond_kdjj_daily = ((latest_daily['j_2'] < latest_daily['kdj_k']) | (latest_daily['kdj_j'] < latest_daily['kdj_k'])) & \
+        # Daily KDJ Condition:
+        # 1. J > K OR J > J_2
+        # 2. Previous J (j_1) < 30
+        # 3. Current J > Previous J
+        cond_kdjj_daily = ((latest_daily['kdj_j'] > latest_daily['kdj_k']) | (latest_daily['kdj_j'] > latest_daily['j_2'])) & \
                     (latest_daily['j_1'] < 30) & \
-                    (latest_daily['kdj_j'] > latest_daily['j_1']) & \
-                    (latest_daily['j_1'] < latest_daily['j_2'])
+                    (latest_daily['kdj_j'] > latest_daily['j_1'])
 
         daily_cond = cond_a3 & cond_kdjj_daily & (latest_daily['volume'] > 0)
         daily_pass_symbols = latest_daily[daily_cond]['symbol'].tolist()
@@ -310,10 +313,13 @@ def run_backtest(symbol: str):
                   (df['dm205'] > df['dm205_1']) & \
                   (df['macdh'] > df['macdh_1'])
 
-        cond_kdjj_daily = ((df['j_2'] < df['kdj_k']) | (df['kdj_j'] < df['kdj_k'])) & \
+        # Daily KDJ Condition:
+        # 1. J > K OR J > J_2
+        # 2. Previous J (j_1) < 30
+        # 3. Current J > Previous J
+        cond_kdjj_daily = ((df['kdj_j'] > df['kdj_k']) | (df['kdj_j'] > df['j_2'])) & \
                     (df['j_1'] < 30) & \
-                    (df['kdj_j'] > df['j_1']) & \
-                    (df['j_1'] < df['j_2'])
+                    (df['kdj_j'] > df['j_1'])
 
         df['buy_signal'] = cond_a3 & cond_kdjj_daily & df['week_buy_cond'] & (df['volume'] > 0)
 
