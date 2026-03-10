@@ -13,7 +13,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-from backend.data_manager import DB_PATH, get_connection, download_stock_list, download_kline_data, sync_all_data, get_sync_progress
+from backend.data_manager import DB_PATH, get_connection, download_stock_list, download_kline_data, sync_all_data, get_sync_progress, get_screener_progress, _update_screener_progress
 
 app = FastAPI(title="A-Share Trader Platform")
 
@@ -40,8 +40,8 @@ def get_stocks():
     finally:
         conn.close()
 
-@app.get("/api/screener")
-def run_screener():
+def run_screener_task():
+    _update_screener_progress("running", 0, 100, "正在准备选股数据...", result=None)
     conn = get_connection()
     try:
         # Prevent memory bomb by only loading the last 60 days of data across all stocks
@@ -50,8 +50,10 @@ def run_screener():
         max_date_str = max_date_df.iloc[0, 0]
 
         if not max_date_str:
-            return {"error": "No data in database", "stocks": []}
+            _update_screener_progress("error", 0, 100, "数据库中无数据", result={"error": "No data in database", "stocks": []})
+            return
 
+        _update_screener_progress("running", 10, 100, "正在加载并计算日线指标...", result=None)
         # We need at least 150 days to calculate robust weekly MACD (EMA25 needs more history). Let's fetch 180 days.
         cutoff_date = (pd.to_datetime(max_date_str) - pd.Timedelta(days=180)).strftime('%Y-%m-%d')
 
@@ -59,11 +61,13 @@ def run_screener():
         df = pd.read_sql_query("SELECT symbol, date, open, high, low, close, volume, ma20, ma205, macdh, kdj_k, kdj_j FROM kline_daily WHERE date >= ?", conn, params=(cutoff_date,))
 
         if df.empty:
-            return {"error": "No recent data", "stocks": []}
+            _update_screener_progress("error", 0, 100, "无最近数据", result={"error": "No recent data", "stocks": []})
+            return
 
         df['date'] = pd.to_datetime(df['date'])
         df = df.sort_values(by=['symbol', 'date']).reset_index(drop=True)
 
+        _update_screener_progress("running", 30, 100, "执行日线条件过滤...", result=None)
         # Calculate shifted columns within groups for daily conditions
         df['m20_1'] = df.groupby('symbol')['ma20'].shift(1)
         df['macdh_1'] = df.groupby('symbol')['macdh'].shift(1)
@@ -94,7 +98,8 @@ def run_screener():
         daily_pass_symbols = latest_daily[daily_cond]['symbol'].tolist()
 
         if not daily_pass_symbols:
-            return {"error": None, "stocks": []}
+            _update_screener_progress("completed", 100, 100, "选股完成", result={"error": None, "stocks": []})
+            return
 
         # Optimization: Only calculate weekly indicator for stocks that passed the daily screener
         df_filtered = df[df['symbol'].isin(daily_pass_symbols)].copy()
@@ -104,7 +109,13 @@ def run_screener():
         # Group to actual weekly periods
         df_filtered['year_week'] = df_filtered['date'].dt.isocalendar().year.astype(str) + '-' + df_filtered['date'].dt.isocalendar().week.astype(str).str.zfill(2)
 
+        total_daily_pass = len(df_filtered.groupby('symbol'))
+        idx = 0
         for sym, group in df_filtered.groupby('symbol'):
+            current_progress = 40 + int(60 * (idx / max(1, total_daily_pass)))
+            _update_screener_progress("running", current_progress, 100, f"正在进行周线过滤 ({idx+1}/{total_daily_pass})...", result=None)
+            idx += 1
+
             if len(group) < 30: # Not enough data
                 continue
 
@@ -144,20 +155,32 @@ def run_screener():
                 final_symbols.append(sym)
 
         if not final_symbols:
-            return {"error": None, "stocks": []}
+            _update_screener_progress("completed", 100, 100, "选股完成", result={"error": None, "stocks": []})
+            return
 
         placeholders = ','.join(['?'] * len(final_symbols))
         query_names = f"SELECT symbol, name FROM stock_list WHERE symbol IN ({placeholders})"
         df_selected = pd.read_sql_query(query_names, conn, params=final_symbols)
 
-        return {"error": None, "stocks": df_selected.to_dict(orient="records")}
+        _update_screener_progress("completed", 100, 100, "选股完成", result={"error": None, "stocks": df_selected.to_dict(orient="records")})
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return {"error": str(e), "stocks": []}
+        _update_screener_progress("error", 0, 100, f"发生错误: {str(e)}", result={"error": str(e), "stocks": []})
     finally:
         conn.close()
+
+@app.post("/api/screener")
+def trigger_screener(background_tasks: BackgroundTasks):
+    if get_screener_progress()['status'] == 'running':
+        return {"message": "Screener is already running"}
+    background_tasks.add_task(run_screener_task)
+    return {"message": "Screener task started in the background."}
+
+@app.get("/api/screener_progress")
+def screener_progress_api():
+    return get_screener_progress()
 
 @app.get("/api/kline/{symbol}")
 def get_kline(symbol: str, period: str = Query("daily")):

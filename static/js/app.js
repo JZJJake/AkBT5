@@ -825,31 +825,79 @@ document.addEventListener('DOMContentLoaded', () => {
     if (screenerBtn) {
         screenerBtn.addEventListener('click', async () => {
             screenerBtn.disabled = true;
-            screenerBtn.textContent = '选股中...';
+            screenerBtn.textContent = '正在选股……';
             allStocks = []; // Clear the pool
             renderStockList(allStocks);
             stockListEl.innerHTML = '<li style="color: gray; padding: 10px;">运行选股策略中...</li>';
 
             try {
-                const res = await fetch('/api/screener');
-                const data = await res.json();
-                if (data.error) {
-                    showToast('选股出错: ' + data.error, 'error');
-                    renderStockList(allStocks); // reset
-                } else {
-                    showToast('选股完成! 找到符合条件的股票数量: ' + data.stocks.length, 'success', 5000);
-                    // Update sidebar with only matched stocks
-                    allStocks = data.stocks;
-                    renderStockList(allStocks);
+                const res = await fetch('/api/screener', { method: 'POST' });
+                const startData = await res.json();
+                if (startData.message) {
+                    showToast(startData.message, 'info');
+                    pollScreenerProgress();
                 }
             } catch (err) {
                 console.error(err);
                 showToast('选股请求失败', 'error');
-            } finally {
                 screenerBtn.disabled = false;
-                screenerBtn.textContent = '选股 (Screener)';
+                screenerBtn.textContent = '执行选股';
             }
         });
+    }
+
+    function pollScreenerProgress() {
+        const syncProgressContainer = document.getElementById('sync-progress-container');
+        const syncProgressFill = document.getElementById('sync-progress-fill');
+        const syncProgressText = document.getElementById('sync-status-text');
+
+        if (!syncProgressContainer) return;
+        syncProgressContainer.classList.remove('hidden');
+        syncProgressContainer.style.display = 'block';
+
+        const pollInterval = setInterval(async () => {
+            try {
+                const res = await fetch('/api/screener_progress');
+                const data = await res.json();
+
+                if (data.status === 'idle') {
+                    // Task hasn't started yet or was reset
+                    return;
+                }
+
+                if (syncProgressFill) syncProgressFill.style.width = `${data.current}%`;
+                if (syncProgressText) syncProgressText.textContent = data.message;
+                const percentageText = document.getElementById('sync-percentage');
+                if (percentageText) percentageText.textContent = `${Math.round(data.current)}%`;
+
+                if (data.status === 'completed' || data.status === 'error') {
+                    clearInterval(pollInterval);
+                    setTimeout(() => {
+                        syncProgressContainer.style.display = 'none';
+                        syncProgressContainer.classList.add('hidden');
+                        screenerBtn.disabled = false;
+                        screenerBtn.textContent = '执行选股';
+                    }, 2000);
+
+                    if (data.status === 'error') {
+                        showToast('选股出错: ' + (data.result ? data.result.error : data.message), 'error');
+                        renderStockList(allStocks); // reset
+                    } else if (data.status === 'completed' && data.result) {
+                        showToast('选股完成! 找到符合条件的股票数量: ' + data.result.stocks.length, 'success', 5000);
+                        // Update sidebar with only matched stocks
+                        allStocks = data.result.stocks;
+                        renderStockList(allStocks);
+                    }
+                }
+            } catch (err) {
+                console.error("Error polling screener progress:", err);
+                clearInterval(pollInterval);
+                screenerBtn.disabled = false;
+                screenerBtn.textContent = '执行选股';
+                syncProgressContainer.style.display = 'none';
+                syncProgressContainer.classList.add('hidden');
+            }
+        }, 500);
     }
 
     // Triggers

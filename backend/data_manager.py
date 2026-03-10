@@ -27,6 +27,27 @@ def _update_progress(status, current, total, message):
     sync_progress['total'] = total
     sync_progress['message'] = message
 
+# Global state for tracking screener progress
+screener_progress = {
+    "status": "idle",
+    "current": 0,
+    "total": 0,
+    "message": "",
+    "result": None
+}
+
+def get_screener_progress():
+    return screener_progress
+
+def _update_screener_progress(status, current, total, message, result=None):
+    screener_progress['status'] = status
+    screener_progress['current'] = current
+    screener_progress['total'] = total
+    screener_progress['message'] = message
+    if result is not None:
+        screener_progress['result'] = result
+
+
 
 def get_connection():
     return sqlite3.connect(DB_PATH)
